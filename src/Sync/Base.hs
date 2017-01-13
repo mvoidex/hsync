@@ -36,13 +36,13 @@ mirror d = (M.map snd d, M.map fst d)
 --
 -- > let (lm, rm) = combine m (diff l r)
 -- > patch lm l ≡ patch rm r
-combine ∷ (a → a → Either a a) → Diff k a → (Patch k a, Patch k a)
+combine ∷ (a → a → Bool) → Diff k a → (Patch k a, Patch k a)
 combine fn d = (M.mapMaybe (fn' ∘ swap) d, M.mapMaybe fn' d) where
 	fn' (Nothing, _) = Nothing
 	fn' (Just l, Nothing) = Just (Just l)
-	fn' (Just l, Just r) = case fn l r of
-		Left v → Just (Just v)
-		Right _ → Nothing
+	fn' (Just l, Just r)
+		| fn l r = Just (Just l)
+		| otherwise = Nothing
 
 -- | Merge two patches
 merge ∷ (Ord k, Eq a) ⇒ Patch k a → Patch k a → Merge k a
