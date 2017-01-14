@@ -9,6 +9,8 @@ import Prelude.Unicode
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Except
+import Data.Maybe
 import Data.Time.Clock
 import System.Directory
 import System.FilePath
@@ -41,4 +43,4 @@ remoteDir ∷ String → FilePath → IO (Repo Entity UTCTime)
 remoteDir host fpath = ssh host $ do
 	cd fpath
 	cts ← invoke "find . -mindepth 1"
-	repo <$> mapM stat cts
+	repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)

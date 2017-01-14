@@ -10,8 +10,9 @@ module Sync.Git (
 import Prelude.Unicode
 
 import Control.Arrow
+import Control.Monad.Except
 import Data.List (nub)
-import Data.Maybe (mapMaybe, listToMaybe)
+import Data.Maybe (mapMaybe, listToMaybe, catMaybes)
 import Data.Time.Clock
 import Data.Tuple (swap)
 import System.Process
@@ -39,7 +40,7 @@ remoteGit ∷ String → FilePath → IO (Patch Entity UTCTime)
 remoteGit host fpath = ssh host $ do
 	cd fpath
 	out ← invoke "git status -s"
-	repo <$> traverse (uncurry getStat) (parseGitStatus out)
+	repo <$> fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (parseGitStatus out))
 	where
 		getStat True f = second Update <$> stat f
 		getStat False f = return (entity False f, Delete)

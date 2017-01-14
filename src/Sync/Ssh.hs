@@ -40,8 +40,8 @@ instance Show ProcessError where
 
 instance Exception ProcessError
 
-run ∷ String → [String] → ProcessM a → IO a
-run cmd args act = do
+run ∷ String → [String] → (String → String) → ProcessM a → IO a
+run cmd args echo' act = do
 	(stdin', stdout', stderr', ph) ← runInteractiveProcess cmd args Nothing Nothing
 	mapM_ setHandle [stdin', stdout', stderr']
 	chIn ← newChan
@@ -57,7 +57,7 @@ run cmd args act = do
 		mapM_ (writeChan ch ∘ Just) ∘ lines $ cts
 
 	let
-		duplex = ProcessDuplex chIn chOut chErr ph
+		duplex = ProcessDuplex chIn chOut chErr ph echo'
 
 	res ← runExceptT $ flip runReaderT duplex $ do
 		r ← act
@@ -73,10 +73,10 @@ run cmd args act = do
 			hSetNewlineMode h noNewlineTranslation
 
 ssh ∷ String → ProcessM a → IO a
-ssh host = run "ssh" [host]
+ssh host = run "ssh" [host] id
 
 sftp ∷ String → FilePath → ProcessM a → IO a
-sftp host path = run "sftp" [host ++ ":" ++ path]
+sftp host path = run "sftp" [host ++ ":" ++ path] ('!':)
 
 send ∷ String → ProcessM ()
 send s = do
@@ -150,7 +150,8 @@ data ProcessDuplex = ProcessDuplex {
 	duplexIn ∷ Chan (Maybe String),
 	duplexOut ∷ Chan (Maybe String),
 	duplexErr ∷ Chan (Maybe String),
-	duplexProcess ∷ ProcessHandle }
+	duplexProcess ∷ ProcessHandle,
+	duplexEcho ∷ String → String }
 
 type ProcessM a = ReaderT ProcessDuplex (ExceptT (Int, [String]) IO) a
 
@@ -160,8 +161,9 @@ result (ExitFailure code) _ err = throwError (code, err)
 
 wait ∷ ProcessM [String]
 wait = do
-	send $ "echo " ++ waitStr ++ " $?"
-	send $ "echo " ++ waitStr ++ " 1>&2"
+	echo ← asks duplexEcho
+	send $ echo $ "echo " ++ waitStr ++ " $?"
+	send $ echo $ "echo " ++ waitStr ++ " 1>&2"
 	out ← asks duplexOut
 	err ← asks duplexErr
 	(o, code) ← readWait out
