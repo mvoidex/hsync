@@ -12,9 +12,8 @@ import Prelude.Unicode
 import Control.Arrow
 import Control.Lens
 import Control.Monad.Except
-import Data.List (nub, inits)
+import Data.List (nub)
 import Data.Maybe (mapMaybe, listToMaybe, catMaybes)
-import qualified Data.Set as S
 import Data.Time.Clock
 import Data.Tuple (swap)
 import System.Directory
