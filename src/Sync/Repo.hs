@@ -14,6 +14,7 @@ import Control.Lens
 import Control.Exception (bracket)
 import Data.Time.Clock
 import System.Directory
+import qualified System.FilePath as F
 import System.FilePath.Posix
 import Text.Regex.PCRE ((=~))
 
@@ -24,11 +25,17 @@ instance Show Location where
 	show (Remote host fpath) = host ++ ":" ++ fpath
 
 instance Read Location where
-	readsPrec _ str = case rest of
-		':':path → [(Remote host path, "")]
-		_ → [(Local str, "")]
+	readsPrec _ str
+		| F.isAbsolute str = [(Local $ map replacePathSep str, "")]
+		| otherwise = case rest of
+			':':path → [(Remote host path, "")]
+			_ → [(Local str, "")]
 		where
 			(host, rest) = break (≡ ':') str
+			replacePathSep ch
+				| ch ∈ F.pathSeparators = pathSeparator
+				| otherwise = ch
+
 
 location ∷ (FilePath → a) → (String → FilePath → a) → Location → a
 location local' _ (Local fpath) = local' fpath

@@ -71,7 +71,7 @@ remoteGit host fpath untracked = ssh host $ do
 			return $ toList ∘ fmap Update ∘ mapKeys (over entityPath (normalise ∘ (d </>))) $ r
 
 parents ∷ FilePath → [FilePath]
-parents = map joinPath ∘ tail ∘ inits ∘ splitDirectories ∘ takeDirectory ∘ normalise
+parents = filter (≠ ".") ∘ map joinPath ∘ tail ∘ inits ∘ splitDirectories ∘ takeDirectory ∘ normalise
 
 data GitStatus = Ignored | Untracked | Added | Unmerged | Modified | Renamed | Deleted | Copied deriving (Eq, Ord, Enum, Bounded)
 
