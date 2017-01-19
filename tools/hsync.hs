@@ -59,10 +59,10 @@ main = do
 			case repoType opts of
 				Folder → do
 					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
-					src ← exclude' <$> enumDir (repoSource opts)
+					src ← (exclude' ∘ mapWithKey dropDirTime) <$> enumDir (repoSource opts)
 					verbose opts "✓"
 					verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
-					dst ← exclude' <$> enumDir (repoDestination opts)
+					dst ← (exclude' ∘ mapWithKey dropDirTime) <$> enumDir (repoDestination opts)
 					verbose opts "✓"
 					let
 						diff' = diff src dst
@@ -75,10 +75,10 @@ main = do
 						else exec write patch' (repoSource opts) (repoDestination opts)
 				Git untracked → do
 					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
-					src ← exclude' <$> enumGit (repoSource opts) untracked
+					src ← (exclude' ∘ mapWithKey (fmap ∘ dropDirTime)) <$> enumGit (repoSource opts) untracked
 					verbose opts "✓"
 					verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
-					dst ← exclude' <$> enumGit (repoDestination opts) untracked
+					dst ← (exclude' ∘ mapWithKey (fmap ∘ dropDirTime)) <$> enumGit (repoDestination opts) untracked
 					verbose opts "✓"
 					let
 						patch'
@@ -90,6 +90,9 @@ main = do
 						else exec write patch' (repoSource opts) (repoDestination opts)
 			where
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
+				dropDirTime e
+					| isDir e = const Nothing
+					| otherwise = Just
 
 verbose ∷ Options → String → IO ()
 verbose opts

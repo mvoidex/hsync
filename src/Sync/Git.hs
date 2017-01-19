@@ -36,10 +36,7 @@ git fpath untracked = withDir fpath $ do
 	status ← lines <$> readProcess "git" ["status", if untracked then "-s" else "-suno"] ""
 	rgit ← traverse (uncurry getStat) (parseGitStatus status)
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rgit
-	let
-		parentDirs = S.toList ∘ S.fromList ∘ concatMap (parents ∘ view entityPath) ∘ filter isFile ∘ map fst $ rgit
-	pdirs ← traverse (uncurry getStat) (zip (repeat True) parentDirs)
-	return $ repo $ rgit ++ udirs ++ pdirs
+	return $ repo $ rgit ++ udirs
 	where
 		getStat True f = do
 			tm ← getMTime f
@@ -58,10 +55,7 @@ remoteGit host fpath untracked = ssh host $ do
 	out ← invoke $ "git status " ++ (if untracked then "-s" else "-suno")
 	rgit ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (parseGitStatus out))
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rgit
-	let
-		parentDirs = S.toList ∘ S.fromList ∘ concatMap (parents ∘ view entityPath) ∘ filter isFile ∘ map fst $ rgit
-	pdirs ← traverse (uncurry getStat) (zip (repeat True) parentDirs)
-	return $ repo $ rgit ++ udirs ++ pdirs
+	return $ repo $ rgit ++ udirs
 	where
 		getStat True f = second Update <$> stat f
 		getStat False f = return (Entity False f, Delete)
@@ -69,9 +63,6 @@ remoteGit host fpath untracked = ssh host $ do
 			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1"
 			r ← repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
 			return $ toList ∘ fmap Update ∘ mapKeys (over entityPath (normalise ∘ (d </>))) $ r
-
-parents ∷ FilePath → [FilePath]
-parents = filter (≠ ".") ∘ map joinPath ∘ tail ∘ inits ∘ splitDirectories ∘ takeDirectory ∘ normalise
 
 data GitStatus = Ignored | Untracked | Added | Unmerged | Modified | Renamed | Deleted | Copied deriving (Eq, Ord, Enum, Bounded)
 

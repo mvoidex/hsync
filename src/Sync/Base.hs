@@ -3,7 +3,7 @@
 module Sync.Base (
 	Repo(..), Change(..), Modify(..), Merged(..), Diff, Patch, Merge,
 	swap,
-	repo, toList, mapKeys,
+	repo, toList, mapKeys, mapWithKey,
 	diff,
 	patch, mirror, newest, combine,
 	updates, before,
@@ -85,6 +85,10 @@ toList (Repo r) = M.toList r
 -- | Map keys
 mapKeys ∷ Ord k' ⇒ (k → k') → Repo k a → Repo k' a
 mapKeys f (Repo r) = Repo $ M.mapKeys f r
+
+-- | Make with keys
+mapWithKey ∷ (k → a → b) → Repo k a → Repo k b
+mapWithKey f (Repo r) = Repo $ M.mapWithKey f r
 
 -- | Compare repositories
 diff ∷ (Ord k, Eq a) ⇒ Repo k a → Repo k a → Diff k a

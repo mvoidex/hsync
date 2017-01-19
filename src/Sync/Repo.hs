@@ -36,7 +36,6 @@ instance Read Location where
 				| ch ∈ F.pathSeparators = pathSeparator
 				| otherwise = ch
 
-
 location ∷ (FilePath → a) → (String → FilePath → a) → Location → a
 location local' _ (Local fpath) = local' fpath
 location _ remote' (Remote host fpath) = remote' host fpath
