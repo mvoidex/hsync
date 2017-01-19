@@ -13,7 +13,7 @@ import Control.Monad.Except
 import Data.Maybe
 import Data.Time.Clock
 import System.Directory
-import System.FilePath
+import System.FilePath.Posix
 
 import Sync.Base
 import Sync.Repo
@@ -37,7 +37,7 @@ dir fpath = withDir fpath $ do
 			efile ← doesFileExist f
 			edir ← doesDirectoryExist f
 			when (not efile ∧ not edir) $ fail $ "file or directory not exist: " ++ f
-			return (entity edir f, tm)
+			return (Entity edir f, tm)
 
 remoteDir ∷ String → FilePath → IO (Repo Entity UTCTime)
 remoteDir host fpath = ssh host $ do

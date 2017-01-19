@@ -27,6 +27,7 @@ library
     hformat,
     exceptions,
     filepath,
+    lens,
     mtl,
     process,
     regex-pcre-builtin,

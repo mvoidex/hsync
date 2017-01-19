@@ -15,7 +15,7 @@ import Sync.Exec
 import Sync.Dir
 import Sync.Git
 
-data RepoType = Folder | Git
+data RepoType = Folder | Git Bool
 
 data Options = Options {
 	repoType ∷ RepoType,
@@ -28,10 +28,15 @@ data Options = Options {
 	verboseOutput ∷ Bool }
 
 options ∷ Parser Options
-options = Options <$> typeFlag <*> srcOpt <*> dstOpt <*> noActionFlag <*> combineFlag <*> mirrorFlag <*> many excludeOpt <*> verboseFlag where
+options = Options <$> typeFlags <*> srcOpt <*> dstOpt <*> noActionFlag <*> combineFlag <*> mirrorFlag <*> many excludeOpt <*> verboseFlag where
 	srcOpt = argument auto (metavar "src" <> help "source")
 	dstOpt = argument auto (metavar "dst" <> help "destination")
-	typeFlag = flag Folder Git (long "git" <> help "ask git for modifications")
+	typeFlags = mkType <$>
+		switch (long "git" <> help "ask git for modifications") <*>
+		switch (long "untracked" <> short 'u' <> help "show untracked files, git-only")
+		where
+			mkType False = const Folder
+			mkType True = Git
 	noActionFlag = switch (long "noaction" <> short 'n' <> help "don't perform any actions")
 	combineFlag = switch (long "combine" <> short 'c' <> help "combine mode")
 	mirrorFlag = switch (long "mirror" <> short 'm' <> help "mirror mode: replace newer files")
@@ -49,7 +54,8 @@ main = do
 			verbose opts $ format "destination: {0}" ~~ show (repoDestination opts)
 			verbose opts $ format "type: {0}" ~~ (case repoType opts of
 				Folder → "folder"
-				Git → "git")
+				Git False → "git"
+				Git True → "git=u")
 			case repoType opts of
 				Folder → do
 					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
@@ -67,12 +73,12 @@ main = do
 					if optionNoAction opts
 						then mapM_ write $ lines $ show patch'
 						else exec write patch' (repoSource opts) (repoDestination opts)
-				Git → do
+				Git untracked → do
 					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
-					src ← exclude' <$> enumGit (repoSource opts)
+					src ← exclude' <$> enumGit (repoSource opts) untracked
 					verbose opts "✓"
 					verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
-					dst ← exclude' <$> enumGit (repoDestination opts)
+					dst ← exclude' <$> enumGit (repoDestination opts) untracked
 					verbose opts "✓"
 					let
 						patch'

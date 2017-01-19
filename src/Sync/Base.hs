@@ -3,7 +3,7 @@
 module Sync.Base (
 	Repo(..), Change(..), Modify(..), Merged(..), Diff, Patch, Merge,
 	swap,
-	repo, toList,
+	repo, toList, mapKeys,
 	diff,
 	patch, mirror, newest, combine,
 	updates, before,
@@ -41,6 +41,10 @@ instance Show a ⇒ Show (Merged a) where
 	show (Conflict l r) = "✗ " ++ show l ++ " ≠ " ++ show r
 	show (Merged v) = "✓ " ++ show v
 
+instance Functor Merged where
+	fmap f (Conflict l r) = Conflict (fmap f l) (fmap f r)
+	fmap f (Merged v) = Merged (fmap f v)
+
 swap ∷ Change a → Change a
 swap (ChangeLeft v) = ChangeRight v
 swap (ChangeRight v) = ChangeLeft v
@@ -77,6 +81,10 @@ repo = Repo ∘ M.fromList
 -- | Get list of entities
 toList ∷ Repo k a → [(k, a)]
 toList (Repo r) = M.toList r
+
+-- | Map keys
+mapKeys ∷ Ord k' ⇒ (k → k') → Repo k a → Repo k' a
+mapKeys f (Repo r) = Repo $ M.mapKeys f r
 
 -- | Compare repositories
 diff ∷ (Ord k, Eq a) ⇒ Repo k a → Repo k a → Diff k a

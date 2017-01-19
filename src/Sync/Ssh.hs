@@ -122,7 +122,7 @@ stat fpath = do
 			| otherwise = throwError (0, ["unknown file type: " ++ unwords ftype])
 	t ← getType
 	case readMaybe tm of
-		Just tm' → return (entity t fpath, posixSecondsToUTCTime ∘ fromInteger $ tm')
+		Just tm' → return (Entity t fpath, posixSecondsToUTCTime ∘ fromInteger $ tm')
 		Nothing → throwError (0, ["stat: can't parse time " ++ tm])
 
 put ∷ Bool → FilePath → FilePath → ProcessM ()

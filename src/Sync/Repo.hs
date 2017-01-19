@@ -1,9 +1,8 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Sync.Repo (
 	Location(..), location,
-	Entity(..), entity, entityPath, isFile, isDir,
-	split,
-	joins,
-	atRoot,
+	Entity(..), entityIsDir, entityPath, isFile, isDir,
 	withDir,
 	getMTime,
 	match
@@ -11,11 +10,11 @@ module Sync.Repo (
 
 import Prelude.Unicode
 
+import Control.Lens
 import Control.Exception (bracket)
-import Data.List
 import Data.Time.Clock
 import System.Directory
-import System.FilePath
+import System.FilePath.Posix
 import Text.Regex.PCRE ((=~))
 
 data Location = Local FilePath | Remote String FilePath deriving (Eq, Ord)
@@ -35,36 +34,23 @@ location ∷ (FilePath → a) → (String → FilePath → a) → Location → a
 location local' _ (Local fpath) = local' fpath
 location _ remote' (Remote host fpath) = remote' host fpath
 
-data Entity = File [FilePath] | Dir [FilePath] deriving (Eq, Ord, Read)
+data Entity = Entity {
+	_entityIsDir ∷ Bool,
+	_entityPath ∷ FilePath }
+		deriving (Eq, Ord, Read)
+
+makeLenses ''Entity
 
 instance Show Entity where
-	show (File fpath) = intercalate "/" fpath
-	show (Dir fpath) = intercalate "/" fpath ++ "/"
-
-entity ∷ Bool → FilePath → Entity
-entity False = File ∘ split
-entity True = Dir ∘ split
-
-entityPath ∷ Entity → [FilePath]
-entityPath (File f) = f
-entityPath (Dir d) = d
+	show (Entity dir' fpath)
+		| dir' = addTrailingPathSeparator fpath
+		| otherwise = fpath
 
 isFile ∷ Entity → Bool
-isFile (File _) = True
-isFile _ = False
+isFile = not ∘ isDir
 
 isDir ∷ Entity → Bool
-isDir (Dir _) = True
-isDir _ = False
-
-split ∷ FilePath → [FilePath]
-split = splitDirectories ∘ normalise
-
-joins ∷ [FilePath] → FilePath
-joins = intercalate "/"
-
-atRoot ∷ FilePath → [FilePath] → FilePath
-atRoot root path = intercalate "/" $ split root ++ path
+isDir = view entityIsDir
 
 withDir ∷ FilePath → IO a → IO a
 withDir fpath act = bracket getCurrentDirectory setCurrentDirectory $ \_ → setCurrentDirectory fpath >> act
@@ -75,4 +61,4 @@ getMTime f = do
 	return $ tm { utctDayTime = secondsToDiffTime (diffTimeToPicoseconds (utctDayTime tm) `div` (10 ^ (12 ∷ Integer))) }
 
 match ∷ String → Entity → Bool
-match rx = any (=~ rx) ∘ entityPath
+match rx = any (=~ rx) ∘ splitDirectories ∘ normalise ∘ view entityPath
