@@ -15,6 +15,7 @@ import Data.List (nub)
 import Data.Maybe (mapMaybe, listToMaybe, catMaybes)
 import Data.Time.Clock
 import Data.Tuple (swap)
+import System.Directory
 import System.Process
 import Text.Read (readMaybe)
 import Text.Regex.PCRE ((=~))
@@ -33,8 +34,11 @@ git fpath = withDir fpath $ do
 	where
 		getStat True f = do
 			tm ← getMTime f
-			return (entity False f, Update tm)
-		getStat False f = return (entity False f, Delete)
+			dir ← doesDirectoryExist f
+			return (entity dir f, Update tm)
+		getStat False f = do
+			dir ← doesDirectoryExist f
+			return (entity dir f, Delete)
 
 remoteGit ∷ String → FilePath → IO (Patch Entity UTCTime)
 remoteGit host fpath = ssh host $ do
@@ -45,15 +49,18 @@ remoteGit host fpath = ssh host $ do
 		getStat True f = second Update <$> stat f
 		getStat False f = return (entity False f, Delete)
 
-data GitStatus = Untracked | Added | Modified | Renamed | Deleted deriving (Eq, Ord, Enum, Bounded)
+data GitStatus = Ignored | Untracked | Added | Unmerged | Modified | Renamed | Deleted | Copied deriving (Eq, Ord, Enum, Bounded)
 
 gitStates ∷ [(GitStatus, Char)]
 gitStates = [
+	(Ignored, '!'),
 	(Untracked, '?'),
 	(Added, 'A'),
+	(Unmerged, 'U'),
 	(Modified, 'M'),
 	(Renamed, 'R'),
-	(Deleted, 'D')]
+	(Deleted, 'D'),
+	(Copied, 'C')]
 
 instance Show GitStatus where
 	show = maybe undefined return ∘ flip lookup gitStates
@@ -65,22 +72,25 @@ instance Read GitStatus where
 parseGitStatus ∷ [String] → [(Bool, FilePath)]
 parseGitStatus = concatMap parse' where
 	parse' f = maybe [] (uncurry toStatus) $ do
-		[_, mods, from, to] ← listToMaybe (f =~ "^([AMDR? ]{2}) (.*?)(?: -> (.*?))?$" ∷ [[String]])
+		[_, mods, from, to] ← listToMaybe (f =~ "^([!?AUMRDC ]{2}) (.*?)(?: -> (.*?))?$" ∷ [[String]])
 		let
-			mod' = listToMaybe $ merge' $ nub $ mapMaybe (readMaybe ∘ return) mods
+			mod' = listToMaybe $ merge' $ nub $ map simplifyStatus $ mapMaybe (readMaybe ∘ return) mods
 			files = filter (not ∘ null) [from, to]
 		return (mod', files)
-	merge' [Added, Modified] = [Modified]
-	merge' [Added, Renamed] = [Added]
-	merge' [Added, Deleted] = []
+
+	simplifyStatus Ignored = Modified
+	simplifyStatus Untracked = Modified
+	simplifyStatus Added = Modified
+	simplifyStatus Unmerged = Modified
+	simplifyStatus Copied = error "Never seen this, don't know what to do, so fail"
+	simplifyStatus s = s
+
 	merge' [Modified, Renamed] = [Renamed]
 	merge' [Modified, Deleted] = [Deleted]
 	merge' [Renamed, Modified] = [Renamed]
 	merge' [Renamed, Deleted] = [Deleted]
 	merge' s = s
 	toStatus Nothing _ = []
-	toStatus (Just Untracked) [f] = return (True, f)
-	toStatus (Just Added) [f] = return (True, f)
 	toStatus (Just Modified) [f] = return (True, f)
 	toStatus (Just Renamed) [f, t] = [(False, f), (True, t)]
 	toStatus (Just Deleted) [f] = return (False, f)
