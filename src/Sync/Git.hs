@@ -61,7 +61,7 @@ remoteGit host fpath untracked = ssh host $ do
 		untrackedDir d = do
 			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1"
 			r ← repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
-			return $ toList ∘ fmap Update ∘ mapKeys (over entityPath (normalise ∘ (d </>))) $ r
+			return $ toList ∘ fmap Update ∘ mapKeys (over entityPath normalise) $ r
 
 data GitStatus = Ignored | Untracked | Added | Unmerged | Modified | Renamed | Deleted | Copied deriving (Eq, Ord, Enum, Bounded)
 
