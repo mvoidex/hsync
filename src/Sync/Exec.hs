@@ -36,7 +36,12 @@ exec writeLine p (Remote host l) (Local r) = sftp host l $ forM_ (changes' p) (s
 	exec' (Entity True fpath) Delete = liftIO $ removeDirectory $ r </> fpath
 	exec' (Entity False fpath) (Update _) = get False fpath (r </> fpath)
 	exec' (Entity True fpath) (Update _) = liftIO $ createDirectory (r </> fpath)
-exec _ _ l r = error $ "Can't sync between two remotes: " ++ show l ++ "," ++ show r
+exec writeLine p (Remote lhost l) (Remote rhost r) = ssh lhost $ send sftpToRight >> forM_ (changes' p) (safe writeLine exec') where
+	exec' (Entity False fpath) Delete = rm fpath
+	exec' (Entity True fpath) Delete = rmdir fpath
+	exec' (Entity False fpath) (Update _) = put False (l </> fpath) fpath
+	exec' (Entity True fpath) (Update _) = mkdir fpath
+	sftpToRight = "sftp " ++ rhost ++ ":" ++ quote r
 
 safe ∷ (MonadCatch m, MonadIO m) ⇒ (String → IO ()) → (Entity → Modify a → m ()) → (Entity, Modify a) → m ()
 safe writeLine fn (e, tm) = handle (liftIO ∘ onError) (fn e tm >> liftIO onOk) where

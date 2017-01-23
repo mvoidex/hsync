@@ -9,6 +9,7 @@ module Sync.Ssh (
 	cd,
 	stat,
 	put, get, rm, rmdir, mkdir,
+	quote,
 
 	module Sync.Repo
 	) where
@@ -76,7 +77,7 @@ ssh ∷ String → ProcessM a → IO a
 ssh host = run "ssh" [host] id
 
 sftp ∷ String → FilePath → ProcessM a → IO a
-sftp host path = run "sftp" [host ++ ":" ++ path] ('!':)
+sftp host path = run "sftp" [host ++ ":" ++ quote path] ('!':)
 
 send ∷ String → ProcessM ()
 send s = do
