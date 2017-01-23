@@ -1,0 +1,7 @@
+hsync:
+	☐	Generalize enumerating, there too much code duplication now. There are two envs: local and remote. Git's actions are the same — just calling shell commands, so it'll be good to have one function for both remote and local git enumerating. The problem is with dir — locally we should use System.Directory to enumerate dir contents, but remotely we should use shell commands too.
+	☐	We don't care about directory modify time, drop it?
+	☐	When syncing, deleted files also shown as '✓', which misinforms
+	☐	Syncing with several repos?
+	☐	Sync between two remotes — ssh + sftp
+	☐	Sync in both directions
