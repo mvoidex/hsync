@@ -24,11 +24,12 @@ data Options = Options {
 	optionNoAction ∷ Bool,
 	combineMode ∷ Bool,
 	mirrorMode ∷ Bool,
+	showDiff ∷ Bool,
 	excludePats ∷ [String],
 	verboseOutput ∷ Bool }
 
 options ∷ Parser Options
-options = Options <$> typeFlags <*> srcOpt <*> dstOpt <*> noActionFlag <*> combineFlag <*> mirrorFlag <*> many excludeOpt <*> verboseFlag where
+options = Options <$> typeFlags <*> srcOpt <*> dstOpt <*> noActionFlag <*> combineFlag <*> mirrorFlag <*> showDiffFlag <*> many excludeOpt <*> verboseFlag where
 	srcOpt = argument auto (metavar "src" <> help "source")
 	dstOpt = argument auto (metavar "dst" <> help "destination")
 	typeFlags = mkType <$>
@@ -40,6 +41,7 @@ options = Options <$> typeFlags <*> srcOpt <*> dstOpt <*> noActionFlag <*> combi
 	noActionFlag = switch (long "noaction" <> short 'n' <> help "don't perform any actions")
 	combineFlag = switch (long "combine" <> short 'c' <> help "combine mode")
 	mirrorFlag = switch (long "mirror" <> short 'm' <> help "mirror mode: replace newer files")
+	showDiffFlag = switch (long "diff" <> short 'd' <> help "show diff, don't performs any actions")
 	excludeOpt = strOption (long "exclude" <> short 'e' <> help "exclude directories and files")
 	verboseFlag = switch (long "verbose" <> short 'v' <> help "verbose output")
 
@@ -70,9 +72,10 @@ main = do
 							| combineMode opts = snd $ patch combine diff'
 							| mirrorMode opts = snd $ patch mirror diff'
 							| otherwise = snd $ patch newest diff'
-					if optionNoAction opts
-						then mapM_ write $ lines $ show patch'
-						else exec write patch' (repoSource opts) (repoDestination opts)
+					case (optionNoAction opts, showDiff opts) of
+						(_, True) → mapM_ write $ lines $ show diff'
+						(True, _) → mapM_ write $ lines $ show patch'
+						_ → exec write patch' (repoSource opts) (repoDestination opts)
 				Git untracked → do
 					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
 					src ← (exclude' ∘ mapWithKey (fmap ∘ dropDirTime)) <$> enumGit (repoSource opts) untracked
@@ -85,9 +88,10 @@ main = do
 							| combineMode opts = snd $ patch combine $ diff (updates src) (updates dst)
 							| mirrorMode opts = rebase mirror dst src
 							| otherwise = rebase newest dst src
-					if optionNoAction opts
-						then mapM_ write $ lines $ show patch'
-						else exec write patch' (repoSource opts) (repoDestination opts)
+					case (optionNoAction opts, showDiff opts) of
+						(_, True) → mapM_ write $ lines $ show $ diff src dst
+						(True, _) → mapM_ write $ lines $ show patch'
+						_ → exec write patch' (repoSource opts) (repoDestination opts)
 			where
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
 				dropDirTime e
