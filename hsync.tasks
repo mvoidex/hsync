@@ -5,5 +5,5 @@ hsync:
 	☐	Syncing with several repos?
 	✔	Sync between two remotes — ssh + sftp @done (17-01-23 20:19)
 	☐	Sync in both directions
-		☐	Comparing action to show difference between repos
+	✔	Comparing action to show difference between repos @done (17-01-24 13:11)
 	☐	When you `git checkout changed-file` locally, but you've sent modified version to remote, it won't be reverted back remotely as long as git won't say anything about this file. But it should be reverted at least with '--mirror' flag.
