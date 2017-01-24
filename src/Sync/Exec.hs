@@ -43,15 +43,15 @@ exec writeLine p (Remote lhost l) (Remote rhost r) = ssh lhost $ send sftpToRigh
 	exec' (Entity True fpath) (Update _) = mkdir fpath
 	sftpToRight = "sftp " ++ rhost ++ ":" ++ quote r
 
-safe ∷ (MonadCatch m, MonadIO m) ⇒ (String → IO ()) → (Entity → Modify a → m ()) → (Entity, Modify a) → m ()
+safe ∷ (MonadCatch m, MonadIO m) ⇒ (String → IO ()) → (Entity → Action a → m ()) → (Entity, Action a) → m ()
 safe writeLine fn (e, tm) = handle (liftIO ∘ onError) (fn e tm >> liftIO onOk) where
 	onError ∷ SomeException → IO ()
-	onError err = writeLine $ "✗ " ++ show e ++ ": " ++ show err
-	onOk = writeLine $ "✓ " ++ show e
+	onError err = writeLine $ show e ++ ": " ++ show err
+	onOk = writeLine $ show $ RepoItem e tm
 
-changes' ∷ Patch Entity a → [(Entity, Modify a)]
+changes' ∷ Patch Entity a → [(Entity, Action a)]
 changes' = sortBy cmp ∘ toList where
-	cmp ∷ (Entity, Modify a) → (Entity, Modify a) → Ordering
+	cmp ∷ (Entity, Action a) → (Entity, Action a) → Ordering
 	cmp (l, dl) (r, dr) = compare (entityType dl l, view entityPath l) (entityType dr r, view entityPath r)
 	entityType Delete = isDir
 	entityType (Update _) = isFile

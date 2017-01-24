@@ -24,7 +24,6 @@ library
     base-unicode-symbols == 0.2.*,
     containers,
     directory,
-    hformat == 0.2.*,
     exceptions,
     filepath,
     lens,

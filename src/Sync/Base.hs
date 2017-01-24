@@ -1,7 +1,8 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable, FlexibleInstances, UndecidableInstances #-}
 
 module Sync.Base (
-	Repo(..), Change(..), Modify(..), Merged(..), Diff, Patch, Merge,
+	Repo(..), Change(..), Action(..), Merged(..), Diff, Patch, Merge,
+	RepoItem(..),
 	swap,
 	repo, toList, mapKeys, mapWithKey,
 	diff,
@@ -17,15 +18,21 @@ import Prelude.Unicode
 
 import Data.Map (Map)
 import qualified Data.Map as M
-import Text.Format hiding (fmt)
 
+-- | Named items
 newtype Repo k a = Repo { getRepo ∷ Map k a } deriving (Eq, Ord, Functor, Traversable, Foldable)
+-- | Change between repos
 data Change a = ChangeLeft a | ChangeRight a | ChangeBoth a a deriving (Eq, Ord, Functor)
-data Modify a = Delete | Update a deriving (Eq, Ord, Functor)
-data Merged a = Conflict (Modify a) (Modify a) | Merged (Modify a) deriving (Eq, Ord)
+-- | Action on item
+data Action a = Delete | Update a deriving (Eq, Ord, Functor)
+-- | Merged item
+data Merged a = Conflict (Action a) (Action a) | Merged (Action a) deriving (Eq, Ord)
 
+-- | Diff is repo if changes
 type Diff k a = Repo k (Change a)
-type Patch k a = Repo k (Modify a)
+-- | Patch is repo of actions
+type Patch k a = Repo k (Action a)
+-- | Merge state is repo of merged
 type Merge k a = Repo k (Merged a)
 
 instance Show a ⇒ Show (Change a) where
@@ -33,7 +40,7 @@ instance Show a ⇒ Show (Change a) where
 	show (ChangeRight v) = "⇒ " ++ show v
 	show (ChangeBoth l r) = "⇔ " ++ show l ++ " " ++ show r
 
-instance Show a ⇒ Show (Modify a) where
+instance Show a ⇒ Show (Action a) where
 	show Delete = "-"
 	show (Update v) = "+" ++ show v
 
@@ -50,29 +57,29 @@ swap (ChangeLeft v) = ChangeRight v
 swap (ChangeRight v) = ChangeLeft v
 swap (ChangeBoth l r) = ChangeBoth r l
 
-class Fmt a where
-	fmt ∷ a → Format
+-- | Used for printing items
+data RepoItem k a = RepoItem k a deriving (Eq, Ord)
 
-instance Fmt (Change a) where
-	fmt (ChangeLeft _) = format "{name} ⇐"
-	fmt (ChangeRight _) = format "{name} ⇒"
-	fmt (ChangeBoth _ _) = format "{name} ⇔"
+instance Show k ⇒ Show (RepoItem k (Change a)) where
+	show (RepoItem name (ChangeLeft _)) = "⇐ " ++ show name
+	show (RepoItem name (ChangeRight _)) = "⇒ " ++ show name
+	show (RepoItem name (ChangeBoth _ _)) = "⇔ " ++ show name
 
-instance Fmt (Modify a) where
-	fmt Delete = format "✗ {name}"
-	fmt (Update _) = format "✓ {name}"
+instance Show k ⇒ Show (RepoItem k (Action a)) where
+	show (RepoItem name Delete) = "✗ " ++ show name
+	show (RepoItem name (Update _)) = "✓ " ++ show name
 
-instance Fmt (Merged a) where
-	fmt (Conflict _ _) = format "✗ {name}"
-	fmt (Merged _) = format "✓ {name}"
+instance Show k ⇒ Show (RepoItem k (Merged a)) where
+	show (RepoItem name (Conflict _ _)) = "✗ " ++ show name
+	show (RepoItem name (Merged _)) = "✓ " ++ show name
 
-instance {-# OVERLAPPABLE #-} Fmt a where
-	fmt _ = format "{name}"
+instance {-# OVERLAPPABLE #-} Show k ⇒ Show (RepoItem k a) where
+	show (RepoItem name _) = show name
 
-instance (Show k, Fmt a) ⇒ Show (Repo k a) where
+instance Show (RepoItem k a) ⇒ Show (Repo k a) where
 	show (Repo r) = unlines $ do
 		(k, v) ← M.toList r
-		return $ fmt v ~~ ("name" ~% show k)
+		return $ show $ RepoItem k v
 
 -- | Make repo
 repo ∷ Ord k ⇒ [(k, a)] → Repo k a
@@ -100,17 +107,17 @@ diff (Repo l) (Repo r) = Repo $ M.mergeWithKey
 	r
 
 -- | Make patch by function, which selects action based on change
-patch ∷ (Change a → Maybe (Modify a)) → Diff k a → (Patch k a, Patch k a)
+patch ∷ (Change a → Maybe (Action a)) → Diff k a → (Patch k a, Patch k a)
 patch fn (Repo d) = (Repo $ M.mapMaybe (fn ∘ swap) d, Repo $ M.mapMaybe fn d)
 
 -- | Mirror changes
-mirror ∷ Change a → Maybe (Modify a)
+mirror ∷ Change a → Maybe (Action a)
 mirror (ChangeLeft l) = Just $ Update l
 mirror (ChangeRight _) = Just Delete
 mirror (ChangeBoth l _) = Just $ Update l
 
 -- | Select newest on conflict
-newest ∷ Ord a ⇒ Change a → Maybe (Modify a)
+newest ∷ Ord a ⇒ Change a → Maybe (Action a)
 newest (ChangeLeft l) = Just $ Update l
 newest (ChangeRight _) = Just Delete
 newest (ChangeBoth l r)
@@ -118,7 +125,7 @@ newest (ChangeBoth l r)
 	| otherwise = Nothing
 
 -- | No delete
-combine ∷ Ord a ⇒ Change a → Maybe (Modify a)
+combine ∷ Ord a ⇒ Change a → Maybe (Action a)
 combine (ChangeLeft l) = Just (Update l)
 combine (ChangeRight _) = Nothing
 combine (ChangeBoth l r)
@@ -145,7 +152,7 @@ merge (Repo l) (Repo r) = Repo $ M.mergeWithKey (const merge') (M.map Merged) (M
 		| otherwise = Just $ Conflict ml mr
 
 -- | Resolve conflicts
-resolve ∷ (k → Modify a → Modify a → Modify a) → Merge k a → Patch k a
+resolve ∷ (k → Action a → Action a → Action a) → Merge k a → Patch k a
 resolve fn (Repo m) = Repo $ M.mapWithKey resolve' m where
 	resolve' k (Conflict l r) = fn k l r
 	resolve' _ (Merged v) = v
@@ -156,7 +163,7 @@ apply (Repo p) (Repo r) = Repo $ M.mergeWithKey (\_ p' _ → apply' p') (M.mapMa
 	apply' Delete = Nothing
 	apply' (Update v) = Just v
 
-rebase ∷ (Ord k, Eq a) ⇒ (Change (Modify a) → Maybe (Modify (Modify a))) → Patch k a → Patch k a → Patch k a
+rebase ∷ (Ord k, Eq a) ⇒ (Change (Action a) → Maybe (Action (Action a))) → Patch k a → Patch k a → Patch k a
 rebase fn b = Repo ∘ M.mapMaybe rebase' ∘ getRepo ∘ fst ∘ patch fn ∘ diff b where
 	rebase' Delete = Nothing
 	rebase' (Update v) = Just v
