@@ -29,7 +29,7 @@ instance Read Location where
 		| F.isAbsolute str = [(Local $ map replacePathSep str, "")]
 		| otherwise = case rest of
 			':':path → [(Remote host path, "")]
-			_ → [(Local str, "")]
+			_ → [(Local $ map replacePathSep str, "")]
 		where
 			(host, rest) = break (≡ ':') str
 			replacePathSep ch
