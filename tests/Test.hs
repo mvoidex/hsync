@@ -14,22 +14,43 @@ import Sync.Base
 main ∷ IO ()
 main = hspec $
 	describe "base" $ do
-		it "patch mirror" $
-			apply (fst $ patch mirror $ diff lrepo rrepo) lrepo ≡ rrepo
-		it "patch combine" $
-			let
-				(l', r') = patch combine $ diff lrepo rrepo
-			in
-				apply l' lrepo ≡ apply r' rrepo
+		it "patch" $ do
+			apply (fst $ patch $ diff base other) base `shouldBe` other
+			apply (snd $ patch $ diff base other) other `shouldBe` base
+		it "reverts" $ do
+			revert (revert patch1) `shouldBe` patch1
+			revert (revert patch2) `shouldBe` patch2
+		it "chains" $ do
+			apply (resolved (patch1 `chain` patch2)) base `shouldBe` result
+			resolved (patch1 `chain` patch2) `shouldBe` fst (patch $ diff base result)
+		it "rebases" $
+			(patch3 `chain` resolved (rebase patch1 patch3)) `shouldBe` merge patch1 patch3
+	where
+		result = apply patch2 ∘ apply patch1 $ base
 
-lrepo ∷ Repo String Int
-lrepo = repo [
+base ∷ Repo String Int
+base = repo [
 	("foo", 0),
 	("bar", 10),
 	("baz", 20)]
 
-rrepo ∷ Repo String Int
-rrepo = repo [
+other ∷ Repo String Int
+other = repo [
 	("foo", 10),
-	("baz", 10),
-	("quux", 30)]
+	("bar", 0),
+	("quux", 40)]
+
+patch1 ∷ Patch String Int
+patch1 = repo [
+	("foo", Update 0 10),
+	("bar", Delete 10),
+	("quux", Create 0)]
+
+patch2 ∷ Patch String Int
+patch2 = repo [
+	("foo", Update 10 20),
+	("quux", Update 0 10)]
+
+patch3 ∷ Patch String Int
+patch3 = repo [
+	("foo", Update 0 10)]

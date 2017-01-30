@@ -11,6 +11,7 @@ import System.Console.ANSI
 import System.IO
 import Text.Format
 
+import Sync.Base.Internal (mapWithKey)
 import Sync.Exec
 import Sync.Dir
 import Sync.Git
@@ -24,26 +25,40 @@ data Options = Options {
 	optionNoAction ∷ Bool,
 	combineMode ∷ Bool,
 	mirrorMode ∷ Bool,
+	newestMode ∷ Bool,
+	preferMode ∷ Maybe Bool,
+	ignoreMode ∷ Bool,
 	showDiff ∷ Bool,
 	excludePats ∷ [String],
 	verboseOutput ∷ Bool }
 
 options ∷ Parser Options
-options = Options <$> typeFlags <*> srcOpt <*> dstOpt <*> noActionFlag <*> combineFlag <*> mirrorFlag <*> showDiffFlag <*> many excludeOpt <*> verboseFlag where
-	srcOpt = argument auto (metavar "src" <> help "source")
-	dstOpt = argument auto (metavar "dst" <> help "destination")
-	typeFlags = mkType <$>
-		switch (long "git" <> help "ask git for modifications") <*>
-		switch (long "untracked" <> short 'u' <> help "show untracked files, git-only")
-		where
-			mkType False = const Folder
-			mkType True = Git
-	noActionFlag = switch (long "noaction" <> short 'n' <> help "don't perform any actions")
-	combineFlag = switch (long "combine" <> short 'c' <> help "combine mode")
-	mirrorFlag = switch (long "mirror" <> short 'm' <> help "mirror mode: replace newer files")
-	showDiffFlag = switch (long "diff" <> short 'd' <> help "show diff, don't performs any actions")
-	excludeOpt = strOption (long "exclude" <> short 'e' <> help "exclude directories and files")
-	verboseFlag = switch (long "verbose" <> short 'v' <> help "verbose output")
+options =
+	Options
+		<$> typeFlags
+		<*> argument auto (metavar "src" <> help "source")
+		<*> argument auto (metavar "dst" <> help "destination")
+		<*> switch (long "noaction" <> short 'n' <> help "don't perform any actions")
+		<*> switch (long "combine" <> short 'c' <> help "combine mode, can produce conflicts")
+		<*> switch (long "mirror" <> short 'm' <> help "mirror mode: replace newer files")
+		<*> switch (long "newest" <> help "resolving: prefer newest")
+		<*> preferModeOpt
+		<*> switch (long "ignore" <> help "resolving: ignore conflict, don't do anything for them")
+		<*> switch (long "diff" <> short 'd' <> help "show diff, don't performs any actions")
+		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files"))
+		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
+	where
+		typeFlags = mkType <$>
+			switch (long "git" <> help "ask git for modifications") <*>
+			switch (long "untracked" <> short 'u' <> help "show untracked files, git-only")
+			where
+				mkType False = const Folder
+				mkType True = Git
+		preferModeOpt = optional (option parse' (long "prefer" <> help "resolving: prefer 'left' or 'right'")) where
+			parse' = eitherReader $ \s → case s of
+				"left" → Right True
+				"right" → Right False
+				_ → Left $ "invalid prefer value: '" ++ s ++ "', can be 'left' or 'right'"
 
 main ∷ IO ()
 main = do
@@ -58,41 +73,41 @@ main = do
 				Folder → "folder"
 				Git False → "git"
 				Git True → "git=u")
-			case repoType opts of
-				Folder → do
-					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
-					src ← (exclude' ∘ mapWithKey dropDirTime) <$> enumDir (repoSource opts)
-					verbose opts "✓"
-					verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
-					dst ← (exclude' ∘ mapWithKey dropDirTime) <$> enumDir (repoDestination opts)
-					verbose opts "✓"
-					let
-						diff' = diff src dst
-						patch'
-							| combineMode opts = snd $ patch combine diff'
-							| mirrorMode opts = snd $ patch mirror diff'
-							| otherwise = snd $ patch newest diff'
-					case (optionNoAction opts, showDiff opts) of
-						(_, True) → mapM_ write $ lines $ show diff'
-						(True, _) → mapM_ write $ lines $ show patch'
-						_ → exec write patch' (repoSource opts) (repoDestination opts)
-				Git untracked → do
-					verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
-					src ← (exclude' ∘ mapWithKey (fmap ∘ dropDirTime)) <$> enumGit (repoSource opts) untracked
-					verbose opts "✓"
-					verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
-					dst ← (exclude' ∘ mapWithKey (fmap ∘ dropDirTime)) <$> enumGit (repoDestination opts) untracked
-					verbose opts "✓"
-					let
-						patch'
-							| combineMode opts = snd $ patch combine $ diff (updates src) (updates dst)
-							| mirrorMode opts = rebase mirror dst src
-							| otherwise = rebase newest dst src
-					case (optionNoAction opts, showDiff opts) of
-						(_, True) → mapM_ write $ lines $ show $ diff src dst
-						(True, _) → mapM_ write $ lines $ show patch'
-						_ → exec write patch' (repoSource opts) (repoDestination opts)
+			verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
+			src ← enumRepo (repoSource opts)
+			verbose opts "✓"
+			verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
+			dst ← enumRepo (repoDestination opts)
+			verbose opts "✓"
+			let
+				patch'
+					| mirrorMode opts = revert dst `chain` src
+					| combineMode opts = maybeIgnore ∘ maybePrefer ∘ maybeNewest $ rebase src dst
+					| otherwise = error "Select mode: mirror or combine" -- TODO: Select default
+				maybeNewest
+					| newestMode opts = tryResolve newest
+					| otherwise = id
+				maybePrefer = case preferMode opts of
+					Nothing → id
+					Just pleft → fmap Merged ∘ resolve (if pleft then preferLeft else preferRight)
+				maybeIgnore
+					| ignoreMode opts = fmap Merged ∘ resolved
+					| otherwise = id
+				resolved' = resolved patch'
+				unresolved' = unresolved patch'
+
+				applyPatch
+					| showDiff opts = print $ diff src dst
+					| not (nullRepo unresolved') = do
+						putStrLn "Conflicts:"
+						print unresolved'
+					| optionNoAction opts = mapM_ write $ lines $ show resolved'
+					| otherwise = exec write resolved' (repoSource opts) (repoDestination opts)
+			applyPatch
 			where
+				enumRepo r = exclude' <$> case repoType opts of
+					Folder → (fmap Create ∘ mapWithKey dropDirTime) <$> enumDir r
+					Git untracked → enumGit r untracked
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
 				dropDirTime e
 					| isDir e = const Nothing

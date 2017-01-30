@@ -1,10 +1,17 @@
 hsync:
 	☐	Generalize enumerating, there too much code duplication now. There are two envs: local and remote. Git's actions are the same — just calling shell commands, so it'll be good to have one function for both remote and local git enumerating. The problem is with dir — locally we should use System.Directory to enumerate dir contents, but remotely we should use shell commands too.
 	☐	We don't care about directory modify time, drop it?
-	✔	When syncing, deleted files also shown as '✓', which misinforms @done (17-01-24 12:51)
 	☐	Syncing with several repos?
-	✔	Sync between two remotes — ssh + sftp @done (17-01-23 20:19)
 	☐	Sync in both directions
-	✔	Comparing action to show difference between repos @done (17-01-24 13:11)
 	☐	When you `git checkout changed-file` locally, but you've sent modified version to remote, it won't be reverted back remotely as long as git won't say anything about this file. But it should be reverted at least with '--mirror' flag.
 	☐	Wait for sftp response to output status correctly
+	☐	with git: if you add `sub/sub2/sub3/file` to left, it won't be copied as long as `sub/sub2/sub3` doesn't exist on right @bug @git
+	☐	sync git to the right with added files, new files will not be added at right and so next call to hsync will copy files again @bug @git
+	☐	`git rev-parse HEAD` to compare bases
+
+
+＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+Archive:
+	✔	Comparing action to show difference between repos @done (17-01-24 13:11) @project(hsync)
+	✔	When syncing, deleted files also shown as '✓', which misinforms @done (17-01-24 12:51) @project(hsync)
+	✔	Sync between two remotes — ssh + sftp @done (17-01-23 20:19) @project(hsync)

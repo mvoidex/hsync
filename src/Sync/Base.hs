@@ -1,85 +1,33 @@
-{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable, FlexibleInstances, UndecidableInstances #-}
-
 module Sync.Base (
-	Repo(..), Change(..), Action(..), Merged(..), Diff, Patch, Merge,
-	RepoItem(..),
-	swap,
-	repo, toList, mapKeys, mapWithKey,
-	diff,
-	patch, mirror, newest, combine,
-	updates, before,
-	merge, resolve,
+	module Sync.Base.Types,
+
+	empty, nullRepo, repo, toList,
+	diff, patch, revert, merge, chain, rebase,
+	resolve, resolveA, tryResolve, tryResolveA,
+	resolved, unresolved,
+	newest, preferLeft, preferRight,
 	apply,
-	rebase,
 	exclude
 	) where
 
+import Prelude hiding (filter)
 import Prelude.Unicode
 
-import Data.Map (Map)
+import Control.Applicative ((<$>))
+import Control.Arrow ((***), (&&&))
+import Data.Either
 import qualified Data.Map as M
 
--- | Named items
-newtype Repo k a = Repo { getRepo ∷ Map k a } deriving (Eq, Ord, Functor, Traversable, Foldable)
--- | Change between repos
-data Change a = ChangeLeft a | ChangeRight a | ChangeBoth a a deriving (Eq, Ord, Functor)
--- | Action on item
-data Action a = Delete | Update a deriving (Eq, Ord, Functor)
--- | Merged item
-data Merged a = Conflict (Action a) (Action a) | Merged (Action a) deriving (Eq, Ord)
+import Sync.Base.Types
+import Sync.Base.Internal
 
--- | Diff is repo if changes
-type Diff k a = Repo k (Change a)
--- | Patch is repo of actions
-type Patch k a = Repo k (Action a)
--- | Merge state is repo of merged
-type Merge k a = Repo k (Merged a)
+-- | Empty repo
+empty ∷ Repo k a
+empty = Repo M.empty
 
-instance Show a ⇒ Show (Change a) where
-	show (ChangeLeft v) = "⇐ " ++ show v
-	show (ChangeRight v) = "⇒ " ++ show v
-	show (ChangeBoth l r) = "⇔ " ++ show l ++ " " ++ show r
-
-instance Show a ⇒ Show (Action a) where
-	show Delete = "-"
-	show (Update v) = "+" ++ show v
-
-instance Show a ⇒ Show (Merged a) where
-	show (Conflict l r) = "✗ " ++ show l ++ " ≠ " ++ show r
-	show (Merged v) = "✓ " ++ show v
-
-instance Functor Merged where
-	fmap f (Conflict l r) = Conflict (fmap f l) (fmap f r)
-	fmap f (Merged v) = Merged (fmap f v)
-
-swap ∷ Change a → Change a
-swap (ChangeLeft v) = ChangeRight v
-swap (ChangeRight v) = ChangeLeft v
-swap (ChangeBoth l r) = ChangeBoth r l
-
--- | Used for printing items
-data RepoItem k a = RepoItem k a deriving (Eq, Ord)
-
-instance Show k ⇒ Show (RepoItem k (Change a)) where
-	show (RepoItem name (ChangeLeft _)) = "⇐ " ++ show name
-	show (RepoItem name (ChangeRight _)) = "⇒ " ++ show name
-	show (RepoItem name (ChangeBoth _ _)) = "⇔ " ++ show name
-
-instance Show k ⇒ Show (RepoItem k (Action a)) where
-	show (RepoItem name Delete) = "✗ " ++ show name
-	show (RepoItem name (Update _)) = "✓ " ++ show name
-
-instance Show k ⇒ Show (RepoItem k (Merged a)) where
-	show (RepoItem name (Conflict _ _)) = "✗ " ++ show name
-	show (RepoItem name (Merged _)) = "✓ " ++ show name
-
-instance {-# OVERLAPPABLE #-} Show k ⇒ Show (RepoItem k a) where
-	show (RepoItem name _) = show name
-
-instance Show (RepoItem k a) ⇒ Show (Repo k a) where
-	show (Repo r) = unlines $ do
-		(k, v) ← M.toList r
-		return $ show $ RepoItem k v
+-- | Is repo empty
+nullRepo ∷ Repo k a → Bool
+nullRepo = M.null ∘ repoItems
 
 -- | Make repo
 repo ∷ Ord k ⇒ [(k, a)] → Repo k a
@@ -89,84 +37,149 @@ repo = Repo ∘ M.fromList
 toList ∷ Repo k a → [(k, a)]
 toList (Repo r) = M.toList r
 
--- | Map keys
-mapKeys ∷ Ord k' ⇒ (k → k') → Repo k a → Repo k' a
-mapKeys f (Repo r) = Repo $ M.mapKeys f r
-
--- | Make with keys
-mapWithKey ∷ (k → a → b) → Repo k a → Repo k b
-mapWithKey f (Repo r) = Repo $ M.mapWithKey f r
-
 -- | Compare repositories
-diff ∷ (Ord k, Eq a) ⇒ Repo k a → Repo k a → Diff k a
-diff (Repo l) (Repo r) = Repo $ M.mergeWithKey
-	(\_ dl dr → if dl ≡ dr then Nothing else Just (ChangeBoth dl dr))
-	(M.map ChangeLeft)
-	(M.map ChangeRight)
-	l
-	r
+diff ∷ Ord k ⇒ Repo k a → Repo k a → Diff k a
+diff (Repo l) (Repo r) = Repo $ M.unions [left', right', both'] where
+	left' = M.map ChangeLeft $ M.difference l r
+	right' = M.map ChangeRight $ M.difference r l
+	both' = M.intersectionWith ChangeBoth l r
 
--- | Make patch by function, which selects action based on change
-patch ∷ (Change a → Maybe (Action a)) → Diff k a → (Patch k a, Patch k a)
-patch fn (Repo d) = (Repo $ M.mapMaybe (fn ∘ swap) d, Repo $ M.mapMaybe fn d)
+-- | Make patches in both directions by diff
+patch ∷ Eq a ⇒ Diff k a → (Patch k a, Patch k a)
+patch d = (mapMaybe (fn ∘ swapChange) d, mapMaybe fn d) where
+	fn (ChangeLeft l) = Just $ Create l
+	fn (ChangeRight r) = Just $ Delete r
+	fn (ChangeBoth l r)
+		| l ≡ r = Nothing
+		| otherwise = Just $ Update r l
 
--- | Mirror changes
-mirror ∷ Change a → Maybe (Action a)
-mirror (ChangeLeft l) = Just $ Update l
-mirror (ChangeRight _) = Just Delete
-mirror (ChangeBoth l _) = Just $ Update l
+-- | Inverse patch
+revert ∷ Patch k a → Patch k a
+revert = fmap revert' where
+	revert' (Create v) = Delete v
+	revert' (Update v v') = Update v' v
+	revert' (Delete v) = Create v
 
--- | Select newest on conflict
-newest ∷ Ord a ⇒ Change a → Maybe (Action a)
-newest (ChangeLeft l) = Just $ Update l
-newest (ChangeRight _) = Just Delete
-newest (ChangeBoth l r)
-	| l > r = Just (Update l)
-	| otherwise = Nothing
-
--- | No delete
-combine ∷ Ord a ⇒ Change a → Maybe (Action a)
-combine (ChangeLeft l) = Just (Update l)
-combine (ChangeRight _) = Nothing
-combine (ChangeBoth l r)
-	| l > r = Just (Update l)
-	| otherwise = Nothing
-
--- | Get only updates from patch
-updates ∷ Patch k a → Repo k a
-updates (Repo r) = Repo $ M.mapMaybe update' r where
-	update' Delete = Nothing
-	update' (Update v) = Just v
-
--- | Sequence two patches
-before ∷ (Ord k, Ord a) ⇒ Patch k a → Patch k a → Patch k a
-before (Repo l) (Repo r) = Repo $ M.unionWith before' l r where
-	before' (Update l') (Update r') = Update $ max l' r'
-	before' _ r' = r'
-
--- | Merge two patches
+-- | Merge two independent patches
 merge ∷ (Ord k, Eq a) ⇒ Patch k a → Patch k a → Merge k a
-merge (Repo l) (Repo r) = Repo $ M.mergeWithKey (const merge') (M.map Merged) (M.map Merged) l r where
-	merge' ml mr
-		| ml ≡ mr = Just $ Merged ml
-		| otherwise = Just $ Conflict ml mr
+merge l r = merge' <$> diff l r where
+	merge' (ChangeLeft l') = Merged l'
+	merge' (ChangeRight r') = Merged r'
+	merge' (ChangeBoth l' r')
+		| l' ≡ r' = Merged l'
+		| otherwise = Conflict l' r'
+
+-- | Chain two patches
+chain ∷ (Ord k, Eq a) ⇒ Patch k a → Patch k a → Merge k a
+chain l r = mapMaybe chain' $ diff l r where
+	chain' (ChangeLeft l') = Just $ Merged l'
+	chain' (ChangeRight r') = Just $ Merged r'
+	chain' (ChangeBoth l' r')
+		| ldst ≡ rsrc = Merged <$> fromPath lsrc rdst
+		| otherwise = Just $ Conflict l' r'
+		where
+			(lsrc, ldst) = actionPath l'
+			(rsrc, rdst) = actionPath r'
+			actionPath (Create y) = (Nothing, Just y)
+			actionPath (Update x y) = (Just x, Just y)
+			actionPath (Delete x) = (Just x, Nothing)
+			fromPath Nothing (Just y) = Just $ Create y
+			fromPath (Just x) Nothing = Just $ Delete x
+			fromPath (Just x) (Just y)
+				| x ≡ y = Nothing
+				| otherwise = Just $ Update x y
+			fromPath Nothing Nothing = Nothing
+
+-- | Rebase left over right
+rebase ∷ (Ord k, Eq a) ⇒ Patch k a → Patch k a → Merge k a
+rebase l r = mapMaybe rebase' $ diff l r where
+	rebase' (ChangeLeft l') = Just $ Merged l'
+	rebase' (ChangeRight _) = Nothing
+	rebase' (ChangeBoth l' r')
+		| l' ≡ r' = Nothing
+		| otherwise = Just $ Conflict l' r'
 
 -- | Resolve conflicts
 resolve ∷ (k → Action a → Action a → Action a) → Merge k a → Patch k a
-resolve fn (Repo m) = Repo $ M.mapWithKey resolve' m where
-	resolve' k (Conflict l r) = fn k l r
+resolve fn = mapWithKey resolve' where
 	resolve' _ (Merged v) = v
+	resolve' k (Conflict l r) = fn k l r
 
--- | Apply patch
-apply ∷ Ord k ⇒ Patch k a → Repo k a → Repo k a
-apply (Repo p) (Repo r) = Repo $ M.mergeWithKey (\_ p' _ → apply' p') (M.mapMaybe apply') id p r where
-	apply' Delete = Nothing
-	apply' (Update v) = Just v
+-- | Resolve with applicative
+resolveA ∷ Applicative t ⇒ (k → Action a → Action a → t (Action a)) → Merge k a → t (Patch k a)
+resolveA fn = traverseWithKey resolveA' where
+	resolveA' _ (Merged v) = pure v
+	resolveA' k (Conflict l r) = fn k l r
 
-rebase ∷ (Ord k, Eq a) ⇒ (Change (Action a) → Maybe (Action (Action a))) → Patch k a → Patch k a → Patch k a
-rebase fn b = Repo ∘ M.mapMaybe rebase' ∘ getRepo ∘ fst ∘ patch fn ∘ diff b where
-	rebase' Delete = Nothing
-	rebase' (Update v) = Just v
+-- | Try resolve conflicts, producing new merged-state
+tryResolve ∷ (k → Action a → Action a → Maybe (Action a)) → Merge k a → Merge k a
+tryResolve fn = mapWithKey tryResolve' where
+	tryResolve' k (Conflict l r) = case fn k l r of
+		Nothing → Conflict l r
+		Just v → Merged v
+	tryResolve' _ (Merged v) = Merged v
 
+-- | @tryResolve@ with applicative action
+tryResolveA ∷ Applicative t ⇒ (k → Action a → Action a → t (Maybe (Action a))) → Merge k a → t (Merge k a)
+tryResolveA fn = traverseWithKey tryResolveA' where
+	tryResolveA' k (Conflict l r) = toMerged <$> fn k l r where
+		toMerged Nothing = Conflict l r
+		toMerged (Just v) = Merged v
+	tryResolveA' _ (Merged v) = pure $ Merged v
+
+-- | Get resolved part
+resolved ∷ Merge k a → Patch k a
+resolved = mapMaybe resolved' where
+	resolved' (Merged v) = Just v
+	resolved' _ = Nothing
+
+-- | Leave only unresolved part
+unresolved ∷ Merge k a → Merge k a
+unresolved = filter unresolved' where
+	unresolved' (Conflict _ _) = True
+	unresolved' _ = False
+
+-- | Resolve tactic: select newest
+newest ∷ Ord a ⇒ k → Action a → Action a → Maybe (Action a)
+newest _ l r = do
+	ldst ← dst l
+	rdst ← dst r
+	return $ if ldst > rdst then l else r
+	where
+		dst (Create v) = Just v
+		dst (Update _ v) = Just v
+		dst (Delete _) = Nothing
+
+-- | Resolve tactic: prefer left
+preferLeft ∷ k → Action a → Action a → Action a
+preferLeft _ l _ = l
+
+-- | Resolve tactic: prefer right
+preferRight ∷ k → Action a → Action a → Action a
+preferRight _ _ r = r
+
+-- | Returns valid and invalid part, which can't be applied:
+-- * Create - already exists
+-- * Update - doesn't exist or not equal to previous value
+-- * Delete - doesn't exist or not equal to previous value
+validate ∷ (Ord k, Eq a) ⇒ Patch k a → Repo k a → (Patch k a, Patch k a)
+validate (Repo p) (Repo r) = (Repo *** Repo) $ M.partitionWithKey validate' p where
+	validate' key (Create _) = M.notMember key r
+	validate' key (Update v _) = M.lookup key r ≡ Just v
+	validate' key (Delete v) = M.lookup key r ≡ Just v
+
+-- | Apply patch, fails if patch can't be applied
+apply ∷ (Ord k, Eq a) ⇒ Patch k a → Repo k a → Repo k a
+apply p r
+	| not (nullRepo invalid') = error "Patch can't be applied"
+	| otherwise = Repo $ M.fromList adds `M.union` repoItems r `M.difference` M.fromList deletes
+	where
+		invalid' = snd $ validate p r
+		(adds, deletes) = (rights &&& lefts) ∘ fmap (uncurry makeAct) ∘ toList $ p
+		makeAct key (Create v) = Right (key, v)
+		makeAct key (Update _ v) = Right (key, v)
+		makeAct key (Delete _) = Left (key, ())
+
+-- | Filter repo
 exclude ∷ (k → Bool) → Repo k a → Repo k a
-exclude p (Repo r) = Repo $ M.filterWithKey (\k _ → not (p k)) r
+exclude p = filterWithKey (\k _ → not (p k))
