@@ -38,14 +38,13 @@ git fpath untracked = withDir fpath $ do
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rgit
 	return $ repo $ rgit ++ udirs
 	where
-		getStat act f = do
+		stat' f = do
 			tm ← getMTime f
 			isDir' ← doesDirectoryExist f
-			return (Entity isDir' f, mkAct act $ Just tm)
-		mkAct (Create _) = Create
-		mkAct (Update _ _) = Update Nothing
-		mkAct (Delete _) = const (Delete Nothing)
-
+			return (Entity isDir' f, tm)
+		getStat (Create _) f = second (Create ∘ Just) <$> stat' f
+		getStat (Update _ _) f = second (Update Nothing ∘ Just) <$> stat' f
+		getStat (Delete _) f = return (Entity False f, Delete Nothing)
 		untrackedDir d = do
 			dirCts ← dir d
 			return $ toList ∘ fmap (Create ∘ Just) ∘ mapKeys (over entityPath (normalise ∘ (d </>))) $ dirCts
