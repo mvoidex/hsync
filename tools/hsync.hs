@@ -5,8 +5,10 @@ module Main (
 import Prelude.Unicode
 
 import Control.Applicative
+import Data.List (intersperse)
 import Data.Monoid
 import Options.Applicative
+import Options.Applicative.Help.Pretty as P
 import System.Console.ANSI
 import System.IO
 import Text.Format
@@ -19,9 +21,9 @@ import Sync.Git
 data RepoType = Folder | Git Bool
 
 data Options = Options {
-	repoType ∷ RepoType,
 	repoSource ∷ Location,
 	repoDestination ∷ Location,
+	repoType ∷ RepoType,
 	optionNoAction ∷ Bool,
 	combineMode ∷ Bool,
 	mirrorMode ∷ Bool,
@@ -35,12 +37,12 @@ data Options = Options {
 options ∷ Parser Options
 options =
 	Options
-		<$> typeFlags
-		<*> argument auto (metavar "src" <> help "source")
-		<*> argument auto (metavar "dst" <> help "destination")
-		<*> switch (long "noaction" <> short 'n' <> help "don't perform any actions")
+		<$> argument auto (metavar "src" <> help "source, either local path or remote [host]:[path]")
+		<*> argument auto (metavar "dst" <> help "destination, either local path either remote [host]:[path]")
+		<*> typeFlags
+		<*> switch (long "noaction" <> short 'n' <> help "don't perform any actions, just show what to be done")
 		<*> switch (long "combine" <> short 'c' <> help "combine mode, can produce conflicts")
-		<*> switch (long "mirror" <> short 'm' <> help "mirror mode: replace newer files")
+		<*> switch (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc.")
 		<*> switch (long "newest" <> help "resolving: prefer newest")
 		<*> preferModeOpt
 		<*> switch (long "ignore" <> help "resolving: ignore conflict, don't do anything for them")
@@ -60,11 +62,53 @@ options =
 				"right" → Right False
 				_ → Left $ "invalid prefer value: '" ++ s ++ "', can be 'left' or 'right'"
 
+description ∷ Maybe Doc
+description = Just $ vsep [
+	par "synchronize destination folder state with source one",
+	par "it can ask git for modifications with no need to fully traverse directories",
+	P.empty,
+	par "there are two main modes of syncing:",
+	indent 4 $ vsep [
+		text "mirror -" <+> align (par "destination folder will become in same state as source" <+> parens (par "created files will be deleted, modifications will be reverted etc.")),
+		text "combine -" <+> align (par "try to merge folder states, this can produce conflicts, which have to be resolved:"),
+		indent 4 $ vsep [
+			text "newest -" <+> align (par "prefer file with latest modification time"),
+			text "ignore -" <+> align (par "don't do anything for conflicted files"),
+			text "prefer left|right -" <+> align (par "prefer source of destination file")
+		]
+	],
+	P.empty,
+	par "examples:",
+	P.empty,
+	indent 4 $ vsep $ intersperse P.empty [
+		nest 4 $ vsep [
+			text "hsync src dst --mirror",
+			par "mirror-copy src to dst"
+		],
+		nest 4 $ vsep [
+			text "hsync src dst --combine --newest",
+			par "copy src to dst, overwrites older files, but doesn't touch newest ones; doesn't delete anything"
+		],
+		nest 4 $ vsep [
+			text "hsync src dst --git --mirror",
+			par "mirror-copy src to dst, also restores deleted files, reverts renaming etc.",
+			par "but NOTE, hsync doesn't interact with git" <+> parens (par "doesn't invoke git's add, rm, mv commands") <+>
+				par "it only copies/deletes files"
+		]
+	],
+	P.empty,
+	underline $ text link]
+	where
+		par = hsep ∘ map text ∘ words
+
+link ∷ String
+link = "https://github.com/mvoidex/hsync"
+
 main ∷ IO ()
 main = do
 	hSetEncoding stdin utf8
 	hSetEncoding stdout utf8
-	execParser (info (helper <*> options) (fullDesc <> header "hsync — synchronize folders")) >>= main'
+	execParser (info (helper <*> options) (briefDesc <> header "hsync — synchronize folders" <> footerDoc description)) >>= main'
 	where
 		main' opts = do
 			verbose opts $ format "source: {0}" ~~ show (repoSource opts)
