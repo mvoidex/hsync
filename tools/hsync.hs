@@ -46,7 +46,7 @@ options =
 		<*> switch (long "newest" <> help "resolving: prefer newest")
 		<*> preferModeOpt
 		<*> switch (long "ignore" <> help "resolving: ignore conflict, don't do anything for them")
-		<*> switch (long "diff" <> short 'd' <> help "show diff, don't performs any actions")
+		<*> switch (long "diff" <> short 'd' <> help "show diff, doesn't perform any actions")
 		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
 	where
@@ -69,12 +69,12 @@ description = Just $ vsep [
 	P.empty,
 	par "there are two main modes of syncing:",
 	indent 4 $ vsep [
-		text "mirror -" <+> align (par "destination folder will become in same state as source" <+> parens (par "created files will be deleted, modifications will be reverted etc.")),
-		text "combine -" <+> align (par "try to merge folder states, this can produce conflicts, which have to be resolved:"),
+		text "mirror -" </> align (par "destination folder will become in same state as source" </> parens (par "created files will be deleted, modifications will be reverted etc.")),
+		text "combine -" </> align (par "try to merge folder states, this can produce conflicts, which have to be resolved:"),
 		indent 4 $ vsep [
-			text "newest -" <+> align (par "prefer file with latest modification time"),
-			text "ignore -" <+> align (par "don't do anything for conflicted files"),
-			text "prefer left|right -" <+> align (par "prefer source of destination file")
+			text "newest -" </> align (par "prefer file with latest modification time"),
+			text "ignore -" </> align (par "don't do anything for conflicted files"),
+			text "prefer left|right -" </> align (par "prefer source of destination file")
 		]
 	],
 	P.empty,
@@ -91,15 +91,15 @@ description = Just $ vsep [
 		],
 		nest 4 $ vsep [
 			text "hsync src dst --git --mirror",
-			par "mirror-copy src to dst, also restores deleted files, reverts renaming etc.",
-			par "but NOTE, hsync doesn't interact with git" <+> parens (par "doesn't invoke git's add, rm, mv commands") <+>
-				par "it only copies/deletes files"
+			par "mirror-copy src to dst, also restores deleted files, reverts renaming etc., but NOTE, hsync doesn't interact with git"
+				</> parens (par "doesn't invoke git's add, rm, mv commands")
+				</> par "it only copies/deletes files"
 		]
 	],
 	P.empty,
 	underline $ text link]
 	where
-		par = hsep ∘ map text ∘ words
+		par = foldr1 (</>) ∘ map text ∘ words
 
 link ∷ String
 link = "https://github.com/mvoidex/hsync"
