@@ -24,7 +24,9 @@ exec ∷ (String → IO ()) → Patch Entity a → Location → Location → IO 
 exec writeLine p (Local l) (Local r) = forM_ (changes' p) (safe writeLine exec') where
 	exec' (Entity False fpath) (Delete _) = removeFile $ r </> fpath
 	exec' (Entity True fpath) (Delete _) = removeDirectory $ r </> fpath
-	exec' (Entity False fpath) _ = copyFileWithMetadata (l </> fpath) (r </> fpath)
+	exec' (Entity False fpath) _ = do
+		createDirectoryIfMissing True (takeDirectory (r </> fpath))
+		copyFileWithMetadata (l </> fpath) (r </> fpath)
 	exec' (Entity True fpath) _ = createDirectoryIfMissing True (r </> fpath)
 exec writeLine p (Local l) (Remote host r) = sftp host r $ forM_ (changes' p) (safe writeLine exec') where
 	exec' (Entity False fpath) (Delete _) = rm fpath

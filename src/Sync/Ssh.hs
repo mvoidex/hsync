@@ -41,8 +41,8 @@ instance Show ProcessError where
 
 instance Exception ProcessError
 
-run ∷ String → [String] → (String → String) → ProcessM a → IO a
-run cmd args echo' act = do
+run ∷ String → [String] → (String → String) → ([String] → [String]) → ProcessM a → IO a
+run cmd args echo' filter' act = do
 	(stdin', stdout', stderr', ph) ← runInteractiveProcess cmd args Nothing Nothing
 	mapM_ setHandle [stdin', stdout', stderr']
 	chIn ← newChan
@@ -55,7 +55,7 @@ run cmd args echo' act = do
 		hClose stdin'
 	forM_ [(stdout', chOut), (stderr', chErr)] $ \(h, ch) → forkIO $ flip finally (writeChan ch Nothing) $ do
 		cts ← hGetContents h
-		mapM_ (writeChan ch ∘ Just) ∘ lines $ cts
+		mapM_ (writeChan ch ∘ Just) ∘ filter' ∘ lines $ cts
 
 	let
 		duplex = ProcessDuplex chIn chOut chErr ph echo'
@@ -74,10 +74,11 @@ run cmd args echo' act = do
 			hSetNewlineMode h noNewlineTranslation
 
 ssh ∷ String → ProcessM a → IO a
-ssh host = run "ssh" [host] id
+ssh host = run "ssh" [host] id id
 
 sftp ∷ String → FilePath → ProcessM a → IO a
-sftp host path = run "sftp" [host ++ ":" ++ path] ('!':)
+sftp host path = run "sftp" [host ++ ":" ++ path] ('!':) dropSftpEcho where
+	dropSftpEcho = filter (not ∘ ("sftp> " `isPrefixOf`))
 
 send ∷ String → ProcessM ()
 send s = do
@@ -111,7 +112,7 @@ kill = do
 	close
 
 cd ∷ FilePath → ProcessM ()
-cd fpath = send $ "cd " ++ quote fpath
+cd fpath = invoke_ $ "cd " ++ quote fpath
 
 stat ∷ FilePath → ProcessM (Entity, UTCTime)
 stat fpath = do
@@ -127,25 +128,25 @@ stat fpath = do
 		Nothing → throwError (0, ["stat: can't parse time " ++ tm])
 
 put ∷ Bool → FilePath → FilePath → ProcessM ()
-put recursive from to = send $ unwords [
+put recursive from to = invoke_ $ unwords [
 	if recursive then "put -Pr" else "put -P",
 	quote from,
 	quote to]
 
 get ∷ Bool → FilePath → FilePath → ProcessM ()
-get recursive from to = send $ unwords [
+get recursive from to = invoke_ $ unwords [
 	if recursive then "get -Pr" else "get -P",
 	quote from,
 	quote to]
 
 rm ∷ FilePath → ProcessM ()
-rm fpath = send $ "rm " ++ quote fpath
+rm fpath = invoke_ $ "rm " ++ quote fpath
 
 rmdir ∷ FilePath → ProcessM ()
-rmdir fpath = send $ "rmdir " ++ quote fpath
+rmdir fpath = invoke_ $ "rmdir " ++ quote fpath
 
 mkdir ∷ FilePath → ProcessM ()
-mkdir fpath = send $ "mkdir " ++ quote fpath
+mkdir fpath = invoke_ $ "mkdir " ++ quote fpath
 
 data ProcessDuplex = ProcessDuplex {
 	duplexIn ∷ Chan (Maybe String),

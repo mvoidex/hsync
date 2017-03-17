@@ -4,9 +4,11 @@ hsync:
 	☐	Sync in both directions
 	☐	When you `git checkout changed-file` locally, but you've sent modified version to remote, it won't be reverted back remotely as long as git won't say anything about this file. But it should be reverted at least with '--mirror' flag.
 	☐	Wait for sftp response to output status correctly
+		☐	Make possible async command (with no wait for output)
 	☐	with git: if you add `sub/sub2/sub3/file` to left, it won't be copied as long as `sub/sub2/sub3` doesn't exist on right @bug @git
 	☐	sync git to the right with added files, new files will not be added at right and so next call to hsync will copy files again @bug @git
 	☐	`git rev-parse HEAD` to compare bases
+	☐	Allow syncing single files
 
 
 ＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
