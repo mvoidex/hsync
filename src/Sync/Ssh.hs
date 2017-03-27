@@ -2,13 +2,13 @@
 
 module Sync.Ssh (
 	run, ssh, sftp,
-	send,
+	send, wait,
 	invoke, invoke_,
 	close, kill,
 
 	cd,
 	stat,
-	put, get, rm, rmdir, mkdir,
+	put, get, rm, rmdir, mkdir, mkdirs,
 	quote,
 
 	module Sync.Repo
@@ -27,6 +27,7 @@ import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Data.Typeable
 import System.Exit
+import System.FilePath.Posix ((</>), splitDirectories)
 import System.IO
 import System.Process
 import Text.Read (readMaybe)
@@ -147,6 +148,13 @@ rmdir fpath = invoke_ $ "rmdir " ++ quote fpath
 
 mkdir ∷ FilePath → ProcessM ()
 mkdir fpath = invoke_ $ "mkdir " ++ quote fpath
+
+mkdirs ∷ FilePath → ProcessM ()
+mkdirs fpath = do
+	forM_ fpaths $ \f → send ("mkdir " ++ quote f)
+	void $ wait
+	where
+		fpaths = scanl1 (</>) ∘ splitDirectories $ fpath
 
 data ProcessDuplex = ProcessDuplex {
 	duplexIn ∷ Chan (Maybe String),

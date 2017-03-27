@@ -31,7 +31,7 @@ exec writeLine p (Local l) (Local r) = forM_ (changes' p) (safe writeLine exec')
 exec writeLine p (Local l) (Remote host r) = sftp host r $ forM_ (changes' p) (safe writeLine exec') where
 	exec' (Entity False fpath) (Delete _) = rm fpath
 	exec' (Entity True fpath) (Delete _) = rmdir fpath
-	exec' (Entity False fpath) _ = put False (l </> fpath) fpath
+	exec' (Entity False fpath) _ = mkdirs (takeDirectory fpath) >> put False (l </> fpath) fpath
 	exec' (Entity True fpath) _ = mkdir fpath
 exec writeLine p (Remote host l) (Local r) = sftp host l $ forM_ (changes' p) (safe writeLine exec') where
 	exec' (Entity False fpath) (Delete _) = liftIO $ removeFile $ r </> fpath
@@ -41,7 +41,7 @@ exec writeLine p (Remote host l) (Local r) = sftp host l $ forM_ (changes' p) (s
 exec writeLine p (Remote lhost l) (Remote rhost r) = ssh lhost $ send sftpToRight >> forM_ (changes' p) (safe writeLine exec') where
 	exec' (Entity False fpath) (Delete _) = rm fpath
 	exec' (Entity True fpath) (Delete _) = rmdir fpath
-	exec' (Entity False fpath) _ = put False (l </> fpath) fpath
+	exec' (Entity False fpath) _ = mkdirs (takeDirectory fpath) >> put False (l </> fpath) fpath
 	exec' (Entity True fpath) _ = mkdir fpath
 	sftpToRight = "sftp " ++ rhost ++ ":" ++ quote r
 
