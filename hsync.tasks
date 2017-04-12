@@ -9,3 +9,9 @@ hsync:
 	☐	sync git to the right with added files, new files will not be added at right and so next call to hsync will copy files again @bug @git
 	☐	`git rev-parse HEAD` to compare bases
 	☐	Allow syncing single files
+	☐	When syncing to right in combine mode, there's no need to enumerate all files in right (it may be slow)
+	☐	Protection: warn user if some files will be deleted (disable warn if '-f' passed)
+
+	☐	Config (in ~/.hsync)
+		☐	Special excludes, for example '.git' (for git repos), 'dist' (for haskell)
+		☐	Used repositories

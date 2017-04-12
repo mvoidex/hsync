@@ -46,7 +46,7 @@ test-suite test
     base >= 4.9 && < 4.10,
     base-unicode-symbols == 0.2.*,
     containers,
-    hspec == 2.3.*
+    hspec >= 2.3 && < 2.5
   hs-source-dirs: tests
   default-language: Haskell2010
   default-extensions: UnicodeSyntax
