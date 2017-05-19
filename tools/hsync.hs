@@ -20,19 +20,24 @@ import Sync.Git
 
 data RepoType = Folder | Git Bool
 
+data SyncMode = Default | Mirror | New | Overwrite | Ignore deriving (Eq, Ord, Read, Show, Enum, Bounded)
+
 data Options = Options {
 	repoSource ∷ Location,
 	repoDestination ∷ Location,
 	repoType ∷ RepoType,
 	optionNoAction ∷ Bool,
-	combineMode ∷ Bool,
-	mirrorMode ∷ Bool,
-	newestMode ∷ Bool,
-	preferMode ∷ Maybe Bool,
-	ignoreMode ∷ Bool,
+	syncMode ∷ SyncMode,
 	showDiff ∷ Bool,
 	excludePats ∷ [String],
 	verboseOutput ∷ Bool }
+
+mode ∷ Parser SyncMode
+mode = foldr (<|>) (pure Default) [
+	pure Mirror <* switch (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc."),
+	pure New <* switch (long "new" <> help "new mode: select newest file when syncing"),
+	pure Overwrite <* switch (long "overwrite" <> short 'o' <> help "overwrite mode: overwrite files (even older one) on conflict"),
+	pure Ignore <* switch (long "ignore" <> short 'i' <> help "ignore mode: don't perform actions for conflicts")]
 
 options ∷ Parser Options
 options =
@@ -41,11 +46,7 @@ options =
 		<*> argument auto (metavar "dst" <> help "destination, either local path either remote [host]:[path]")
 		<*> typeFlags
 		<*> switch (long "noaction" <> short 'n' <> help "don't perform any actions, just show what to be done")
-		<*> switch (long "combine" <> short 'c' <> help "combine mode, can produce conflicts")
-		<*> switch (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc.")
-		<*> switch (long "newest" <> help "resolving: prefer newest")
-		<*> preferModeOpt
-		<*> switch (long "ignore" <> help "resolving: ignore conflict, don't do anything for them")
+		<*> mode
 		<*> switch (long "diff" <> short 'd' <> help "show diff, doesn't perform any actions")
 		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
@@ -56,11 +57,6 @@ options =
 			where
 				mkType False = const Folder
 				mkType True = Git
-		preferModeOpt = optional (option parse' (long "prefer" <> help "resolving: prefer 'left' or 'right'")) where
-			parse' = eitherReader $ \s → case s of
-				"left" → Right True
-				"right" → Right False
-				_ → Left $ "invalid prefer value: '" ++ s ++ "', can be 'left' or 'right'"
 
 description ∷ Maybe Doc
 description = Just $ vsep [
@@ -124,19 +120,14 @@ main = do
 			dst ← enumRepo (repoDestination opts)
 			verbose opts "✓"
 			let
-				patch'
-					| mirrorMode opts = revert dst `chain` src
-					| combineMode opts = maybeIgnore ∘ maybePrefer ∘ maybeNewest $ rebase src dst
-					| otherwise = error "Select mode: mirror or combine" -- TODO: Select default
-				maybeNewest
-					| newestMode opts = tryResolve newest
-					| otherwise = id
-				maybePrefer = case preferMode opts of
-					Nothing → id
-					Just pleft → fmap Merged ∘ resolve (if pleft then preferLeft else preferRight)
-				maybeIgnore
-					| ignoreMode opts = fmap Merged ∘ resolved
-					| otherwise = id
+				patch' = case syncMode opts of
+					Default → combined
+					Mirror → revert dst `chain` src
+					New → tryResolve newest combined
+					Overwrite → fmap Merged ∘ resolve preferLeft $ combined
+					Ignore → fmap Merged ∘ resolved $ combined
+					where
+						combined = rebase src dst
 				resolved' = resolved patch'
 				unresolved' = unresolved patch'
 

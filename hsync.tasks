@@ -13,5 +13,15 @@ hsync:
 	☐	Protection: warn user if some files will be deleted (disable warn if '-f' passed)
 
 	☐	Config (in ~/.hsync)
-		☐	Special excludes, for example '.git' (for git repos), 'dist' (for haskell)
+		☐	Special excludes, for example '.git' (for git repos), 'dist' (for haskell), which you may specify with flag '--filter' ('--filter haskell')
 		☐	Used repositories
+
+notes
+'--prefer left' → '--left' ('--override' ?)
+'--prefer right' → '--right' (it just don't perform any action, why its 'prefer' then?)
+
+merge in both directions
+
+accept 'etamin:~/python' (instead of '/home/voidex/python')
+
+'--combine --prefer left' doesn't require enumerating all right data (which may be slow)
