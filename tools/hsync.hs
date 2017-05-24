@@ -10,6 +10,7 @@ import Data.Monoid
 import Options.Applicative
 import Options.Applicative.Help.Pretty as P
 import System.Console.ANSI
+import System.FilePath (FilePath)
 import System.IO
 import Text.Format
 
@@ -17,6 +18,8 @@ import Sync.Base.Internal (mapWithKey)
 import Sync.Exec
 import Sync.Dir
 import Sync.Git
+
+import Config
 
 data RepoType = Folder | Git Bool
 
@@ -31,6 +34,7 @@ data Options = Options {
 	showDiff ∷ Bool,
 	excludePats ∷ [String],
 	includePats ∷ [String],
+	configFile ∷ Maybe FilePath,
 	verboseOutput ∷ Bool }
 
 mode ∷ Parser SyncMode
@@ -51,6 +55,7 @@ options =
 		<*> switch (long "diff" <> short 'd' <> help "show diff, doesn't perform any actions")
 		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files by regex"))
 		<*> many (strOption (long "include" <> short 'i' <> help "include directories and files by regex"))
+		<*> optional (strOption (long "conf" <> help "path to config file, default is ~/.hsync"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
 	where
 		typeFlags = mkType <$>
