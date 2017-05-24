@@ -7,7 +7,7 @@ module Sync.Base (
 	resolved, unresolved,
 	newest, preferLeft, preferRight,
 	apply,
-	exclude
+	exclude, include
 	) where
 
 import Prelude hiding (filter)
@@ -180,6 +180,10 @@ apply p r
 		makeAct key (Update _ v) = Right (key, v)
 		makeAct key (Delete _) = Left (key, ())
 
--- | Filter repo
+-- | Filter repo, excluding matching keys
 exclude ∷ (k → Bool) → Repo k a → Repo k a
 exclude p = filterWithKey (\k _ → not (p k))
+
+-- | Filter repo, leaving only matching keys
+include ∷ (k → Bool) → Repo k a → Repo k a
+include p = filterWithKey (\k _ → p k)

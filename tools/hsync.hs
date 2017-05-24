@@ -20,7 +20,7 @@ import Sync.Git
 
 data RepoType = Folder | Git Bool
 
-data SyncMode = Default | Mirror | New | Overwrite | Ignore deriving (Eq, Ord, Read, Show, Enum, Bounded)
+data SyncMode = Default | Mirror | New | Overwrite | Skip deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
 data Options = Options {
 	repoSource ∷ Location,
@@ -30,6 +30,7 @@ data Options = Options {
 	syncMode ∷ SyncMode,
 	showDiff ∷ Bool,
 	excludePats ∷ [String],
+	includePats ∷ [String],
 	verboseOutput ∷ Bool }
 
 mode ∷ Parser SyncMode
@@ -37,7 +38,7 @@ mode = foldr (<|>) (pure Default) [
 	pure Mirror <* switch (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc."),
 	pure New <* switch (long "new" <> help "new mode: select newest file when syncing"),
 	pure Overwrite <* switch (long "overwrite" <> short 'o' <> help "overwrite mode: overwrite files (even older one) on conflict"),
-	pure Ignore <* switch (long "ignore" <> short 'i' <> help "ignore mode: don't perform actions for conflicts")]
+	pure Skip <* switch (long "skip" <> short 's' <> help "skip mode: don't perform actions for conflicts")]
 
 options ∷ Parser Options
 options =
@@ -48,7 +49,8 @@ options =
 		<*> switch (long "noaction" <> short 'n' <> help "don't perform any actions, just show what to be done")
 		<*> mode
 		<*> switch (long "diff" <> short 'd' <> help "show diff, doesn't perform any actions")
-		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files"))
+		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files by regex"))
+		<*> many (strOption (long "include" <> short 'i' <> help "include directories and files by regex"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
 	where
 		typeFlags = mkType <$>
@@ -104,8 +106,12 @@ main ∷ IO ()
 main = do
 	hSetEncoding stdin utf8
 	hSetEncoding stdout utf8
-	execParser (info (helper <*> options) (briefDesc <> header "hsync — synchronize folders" <> footerDoc description)) >>= main'
+	popts ← execParser (info (helper <*> options) (briefDesc <> header "hsync — synchronize folders" <> footerDoc description))
+	validateOpts popts main'
 	where
+		validateOpts popts act
+			| not (null (includePats popts)) ∧ not (null (excludePats popts)) = putStrLn "only 'include' or 'exclude' filters can be specified, not both"
+			| otherwise = act popts
 		main' opts = do
 			verbose opts $ format "source: {0}" ~~ show (repoSource opts)
 			verbose opts $ format "destination: {0}" ~~ show (repoDestination opts)
@@ -125,7 +131,7 @@ main = do
 					Mirror → revert dst `chain` src
 					New → tryResolve newest combined
 					Overwrite → fmap Merged ∘ resolve preferLeft $ combined
-					Ignore → fmap Merged ∘ resolved $ combined
+					Skip → fmap Merged ∘ resolved $ combined
 					where
 						combined = rebase src dst
 				resolved' = resolved patch'
@@ -140,10 +146,13 @@ main = do
 					| otherwise = exec write resolved' (repoSource opts) (repoDestination opts)
 			applyPatch
 			where
-				enumRepo r = exclude' <$> case repoType opts of
+				enumRepo r = (include' ∘ exclude') <$> case repoType opts of
 					Folder → (fmap Create ∘ mapWithKey dropDirTime) <$> enumDir r
 					Git untracked → enumGit r untracked
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
+				include'
+					| null (includePats opts) = id
+					| otherwise = include (\e → or [match pat e | pat ← includePats opts])
 				dropDirTime e
 					| isDir e = const Nothing
 					| otherwise = Just
