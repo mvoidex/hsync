@@ -34,7 +34,7 @@ enumGit = location git remoteGit
 git ∷ FilePath → Bool → IO (Patch Entity (Maybe UTCTime))
 git fpath untracked = withDir fpath $ do
 	status ← lines <$> readProcess "git" ["status", if untracked then "-s" else "-suno"] ""
-	rgit ← traverse (uncurry getStat) (parseGitStatus status)
+	rgit ← traverse (uncurry getStat) (dropSiblings $ parseGitStatus status)
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rgit
 	return $ repo $ rgit ++ udirs
 	where
@@ -53,7 +53,7 @@ remoteGit ∷ String → FilePath → Bool → IO (Patch Entity (Maybe UTCTime))
 remoteGit host fpath untracked = ssh host $ do
 	cd fpath
 	out ← invoke $ "git status " ++ (if untracked then "-s" else "-suno")
-	rgit ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (parseGitStatus out))
+	rgit ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (dropSiblings $ parseGitStatus out))
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rgit
 	return $ repo $ rgit ++ udirs
 	where
@@ -84,6 +84,11 @@ instance Show GitStatus where
 instance Read GitStatus where
 	readsPrec _ "" = []
 	readsPrec _ (s:ss) = maybe [] (\st → [(st, ss)]) $ lookup s (map swap gitStates)
+
+-- | Leave only files within current directory
+dropSiblings ∷ [(Action (), FilePath)] → [(Action (), FilePath)]
+dropSiblings = filter (not ∘ sibling ∘ snd) where
+	sibling fpath = (listToMaybe ∘ splitDirectories $ fpath) ≡ Just ".."
 
 parseGitStatus ∷ [String] → [(Action (), FilePath)]
 parseGitStatus = concatMap parse' where
