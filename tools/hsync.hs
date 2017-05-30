@@ -45,8 +45,10 @@ mode = foldr (<|>) (pure Default) [
 	pure Skip <* switch (long "skip" <> short 's' <> help "skip mode: don't perform actions for conflicts")]
 
 options ∷ Parser Options
-options =
-	Options
+options = setBack <$> options' <*> switch (long "back" <> short 'b' <> help "backward direction: from destination to source") where
+	setBack opts True = opts { repoSource = repoDestination opts, repoDestination = repoSource opts }
+	setBack opts _ = opts
+	options' = Options
 		<$> argument auto (metavar "src" <> help "source, either local path or remote [host]:[path]")
 		<*> argument auto (metavar "dst" <> help "destination, either local path either remote [host]:[path]")
 		<*> typeFlags
@@ -57,13 +59,12 @@ options =
 		<*> many (strOption (long "include" <> short 'i' <> help "include directories and files by regex"))
 		<*> optional (strOption (long "conf" <> help "path to config file, default is ~/.hsync"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
-	where
-		typeFlags = mkType <$>
-			switch (long "git" <> help "ask git for modifications") <*>
-			switch (long "untracked" <> short 'u' <> help "show untracked files, git-only")
-			where
-				mkType False = const Folder
-				mkType True = Git
+	typeFlags = mkType <$>
+		switch (long "git" <> help "ask git for modifications") <*>
+		switch (long "untracked" <> short 'u' <> help "show untracked files, git-only")
+		where
+			mkType False = const Folder
+			mkType True = Git
 
 description ∷ Maybe Doc
 description = Just $ vsep [

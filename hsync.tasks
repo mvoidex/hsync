@@ -2,7 +2,7 @@ hsync:
 	☐	Generalize enumerating, there too much code duplication now. There are two envs: local and remote. Git's actions are the same — just calling shell commands, so it'll be good to have one function for both remote and local git enumerating. The problem is with dir — locally we should use System.Directory to enumerate dir contents, but remotely we should use shell commands too.
 	☐	Syncing with several repos?
 	☐	Sync in both directions
-	☐	When you `git checkout changed-file` locally, but you've sent modified version to remote, it won't be reverted back remotely as long as git won't say anything about this file. But it should be reverted at least with '--mirror' flag.
+	✔	When you `git checkout changed-file` locally, but you've sent modified version to remote, it won't be reverted back remotely as long as git won't say anything about this file. But it should be reverted at least with '--mirror' flag. @done (17-05-26 14:37)
 	☐	Make possible async command (with no wait for output)
 	☐	sync git to the right with added files, new files will not be added at right and so next call to hsync will copy files again @bug @git
 	☐	`git rev-parse HEAD` to compare bases
@@ -13,13 +13,3 @@ hsync:
 	☐	Config (in ~/.hsync)
 		☐	Special excludes, for example '.git' (for git repos), 'dist' (for haskell), which you may specify with flag '--filter' ('--filter haskell')
 		☐	Used repositories
-
-notes
-'--prefer left' → '--left' ('--override' ?)
-'--prefer right' → '--right' (it just don't perform any action, why its 'prefer' then?)
-
-merge in both directions
-
-accept 'etamin:~/python' (instead of '/home/voidex/python')
-
-'--combine --prefer left' doesn't require enumerating all right data (which may be slow)
