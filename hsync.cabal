@@ -19,6 +19,7 @@ library
     Sync.Base.Internal
     Sync.Dir
     Sync.Git
+    Sync.Svn
     Sync.Repo
     Sync.Ssh
   build-depends:

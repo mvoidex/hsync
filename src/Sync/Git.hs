@@ -52,7 +52,7 @@ git fpath untracked = withDir fpath $ do
 remoteGit ∷ String → FilePath → Bool → IO (Patch Entity (Maybe UTCTime))
 remoteGit host fpath untracked = ssh host $ do
 	cd fpath
-	out ← invoke $ "git status " ++ (if untracked then "-s" else "-suno")
+	out ← invoke $ unwords $ "git" : ["status", if untracked then "-s" else "-suno"]
 	rgit ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (dropSiblings $ parseGitStatus out))
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rgit
 	return $ repo $ rgit ++ udirs

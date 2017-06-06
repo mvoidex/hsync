@@ -18,10 +18,11 @@ import Sync.Base.Internal (mapWithKey)
 import Sync.Exec
 import Sync.Dir
 import Sync.Git
+import Sync.Svn
 
 import Config
 
-data RepoType = Folder | Git Bool
+data RepoType = Folder | Git Bool | Svn Bool
 
 data SyncMode = Default | Mirror | New | Overwrite | Skip deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
@@ -59,27 +60,23 @@ options = setBack <$> options' <*> switch (long "back" <> short 'b' <> help "bac
 		<*> many (strOption (long "include" <> short 'i' <> help "include directories and files by regex"))
 		<*> optional (strOption (long "conf" <> help "path to config file, default is ~/.hsync"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
-	typeFlags = mkType <$>
-		switch (long "git" <> help "ask git for modifications") <*>
-		switch (long "untracked" <> short 'u' <> help "show untracked files, git-only")
-		where
-			mkType False = const Folder
-			mkType True = Git
+	typeFlags = git' <|> svn' <|> pure Folder where
+		git' = flag' Git (long "git" <> help "ask git for modifications") <*> untrackedFlag
+		svn' = flag' Svn (long "svn" <> help "ask svn for modifications") <*> untrackedFlag
+		untrackedFlag = switch (long "untracked" <> short 'u' <> help "show untracked files, git/svn mode")
 
 description ∷ Maybe Doc
 description = Just $ vsep [
 	par "synchronize destination folder state with source one",
-	par "it can ask git for modifications with no need to fully traverse directories",
+	par "it can ask git/svn for modifications with no need to fully traverse directories",
 	P.empty,
-	par "there are two main modes of syncing:",
+	par "there are several modes of syncing:",
 	indent 4 $ vsep [
+		text "default -" </> align (par "try to merge folder states, this can produce conflicts and fail in this case"),
 		text "mirror -" </> align (par "destination folder will become in same state as source" </> parens (par "created files will be deleted, modifications will be reverted etc.")),
-		text "combine -" </> align (par "try to merge folder states, this can produce conflicts, which have to be resolved:"),
-		indent 4 $ vsep [
-			text "newest -" </> align (par "prefer file with latest modification time"),
-			text "ignore -" </> align (par "don't do anything for conflicted files"),
-			text "prefer left|right -" </> align (par "prefer source of destination file")
-		]
+		text "new -" </> align (par "don't delete anything, but overwrite older files at destination"),
+		text "overwrite -" </> align (par "don't delete anything, overwrite files at destination"),
+		text "skip -" </> align (par "don't delete anything, don't overwrite files at destination")
 	],
 	P.empty,
 	par "examples:",
@@ -90,7 +87,7 @@ description = Just $ vsep [
 			par "mirror-copy src to dst"
 		],
 		nest 4 $ vsep [
-			text "hsync src dst --combine --newest",
+			text "hsync src dst --new",
 			par "copy src to dst, overwrites older files, but doesn't touch newest ones; doesn't delete anything"
 		],
 		nest 4 $ vsep [
@@ -124,7 +121,9 @@ main = do
 			verbose opts $ format "type: {0}" ~~ (case repoType opts of
 				Folder → "folder"
 				Git False → "git"
-				Git True → "git=u")
+				Git True → "git=u"
+				Svn False → "svn"
+				Svn True → "svn=u")
 			verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
 			src ← enumRepo (repoSource opts)
 			verbose opts "✓"
@@ -155,6 +154,7 @@ main = do
 				enumRepo r = (include' ∘ exclude') <$> case repoType opts of
 					Folder → (fmap Create ∘ mapWithKey dropDirTime) <$> enumDir r
 					Git untracked → enumGit r untracked
+					Svn untracked → enumSvn r untracked
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
 				include'
 					| null (includePats opts) = id
