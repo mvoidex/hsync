@@ -39,11 +39,11 @@ data Options = Options {
 	verboseOutput ∷ Bool }
 
 mode ∷ Parser SyncMode
-mode = foldr (<|>) (pure Default) [
-	pure Mirror <* switch (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc."),
-	pure New <* switch (long "new" <> help "new mode: select newest file when syncing"),
-	pure Overwrite <* switch (long "overwrite" <> short 'o' <> help "overwrite mode: overwrite files (even older one) on conflict"),
-	pure Skip <* switch (long "skip" <> short 's' <> help "skip mode: don't perform actions for conflicts")]
+mode = mirror' <|> new' <|> overwrite' <|> skip' <|> pure Default where
+	mirror' = flag' Mirror (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc.")
+	new' = flag' New (long "new" <> help "new mode: select newest file when syncing")
+	overwrite' = flag' Overwrite (long "overwrite" <> short 'o' <> help "overwrite mode: overwrite files (even older one) on conflict")
+	skip' = flag' Skip (long "skip" <> short 's' <> help "skip mode: don't perform actions for conflicts")
 
 options ∷ Parser Options
 options = setBack <$> options' <*> switch (long "back" <> short 'b' <> help "backward direction: from destination to source") where
