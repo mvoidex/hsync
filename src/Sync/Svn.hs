@@ -35,7 +35,7 @@ svn fpath untracked = withDir fpath $ do
 	status ← lines <$> readProcess "svn" ("status" : if untracked then [] else ["-q"]) ""
 	rsvn ← traverse (uncurry getStat) (parseSvnStatus status)
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rsvn
-	return $ repo $ rsvn ++ udirs
+	return $ repo $ dropDirTimes $ rsvn ++ udirs
 	where
 		stat' f = do
 			tm ← getMTime f
@@ -54,7 +54,7 @@ remoteSvn host fpath untracked = ssh host $ do
 	out ← invoke $ unwords $ "svn" : ("status" : if untracked then [] else ["-q"])
 	rsvn ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (parseSvnStatus out))
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rsvn
-	return $ repo $ rsvn ++ udirs
+	return $ repo $ dropDirTimes $ rsvn ++ udirs
 	where
 		getStat (Create _) f = second (Create ∘ Just) <$> stat f
 		getStat (Update _ _) f = second (Update Nothing ∘ Just) <$> stat f
@@ -102,3 +102,10 @@ parseSvnStatus = mapMaybe parse' where
 	toStatus Modified f = (Update () (), f)
 	toStatus Deleted f = (Delete (), f)
 	toStatus status f = error $ "Don't know how to convert this svn status to actions, status: " ++ show status ++ ", file: " ++ f
+
+-- We don't want compare directory creation times, so drop them
+dropDirTimes ∷ [(Entity, Action (Maybe UTCTime))] → [(Entity, Action (Maybe UTCTime))]
+dropDirTimes = map dropDirTime where
+	dropDirTime (e, mtm)
+		| isDir e = (e, fmap (const Nothing) mtm)
+		| otherwise = (e, mtm)
