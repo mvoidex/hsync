@@ -99,23 +99,29 @@ parseGitStatus = concatMap parse' where
 			files = filter (not ∘ null) [from', to']
 		return (mod', files)
 
-	-- Leaves only `Added`, `Modified`, `Deleted` and `Renamed`
+	-- Leaves only `Added`, `Modified`, `Deleted`, `Renamed` and `Copied`
 	simplifyStatus Ignored = Added
 	simplifyStatus Untracked = Added
 	simplifyStatus Unmerged = Modified
-	simplifyStatus Copied = error "Never seen this, don't know what to do, so fail"
 	simplifyStatus s = s
 
 	merge' [Added, Modified] = [Added]
-	merge' [Added, Deleted] = error "Impossible git status: added, then deleted"
-	merge' [Added, Renamed] = error "Impossible git status: added, then renamed (should be added with new name)"
-	merge' [Modified, Added] = error "Impossible git status: modified, then added"
+	merge' [Added, Deleted] = error "Impossible git status: AD - added, then deleted"
+	merge' [Added, Renamed] = error "Impossible git status: AR - added, then renamed (should be added with new name)"
+	merge' [Added, Copied] = error "Unknown git status: AC - added, then copied"
+	merge' [Modified, Added] = error "Impossible git status: MA - modified, then added"
 	merge' [Modified, Deleted] = [Deleted]
-	merge' [Modified, Renamed] = error "Impossible git status: modified, then renamed (should be deleted and added with new name)"
-	merge' [Deleted, _] = error "Impossible git status: deleted, then smth else"
-	merge' [Renamed, Added] = error "Impossible git status: renamed, then added"
+	merge' [Modified, Renamed] = error "Impossible git status: MR - modified, then renamed (should be deleted and added with new name)"
+	merge' [Modified, Copied] = error "Unknown git status: MC - modified, then copied"
+	merge' [Deleted, _] = error "Impossible git status: Dx - deleted, then smth else"
+	merge' [Renamed, Added] = error "Impossible git status: RA - renamed, then added"
 	merge' [Renamed, Modified] = [Renamed]
 	merge' [Renamed, Deleted] = [Deleted]
+	merge' [Renamed, Copied] = error "Unknown git status: RC - renamed, then copied"
+	merge' [Copied, Added] = error "Impossible git status: CA - copied, then added"
+	merge' [Copied, Modified] = [Copied]
+	merge' [Copied, Deleted] = [Deleted]
+	merge' [Copied, Renamed] = error "Unknown git status: CR - copied, then renamed"
 	merge' [s] = [s]
 	merge' s = error $ "Impossible git status: " ++ show s
 
@@ -123,5 +129,6 @@ parseGitStatus = concatMap parse' where
 	toStatus (Just Added) [f] = return (Create (), f)
 	toStatus (Just Modified) [f] = return (Update () (), f)
 	toStatus (Just Renamed) [f, t] = [(Delete (), f), (Create (), t)]
+	toStatus (Just Copied) [_, t] = return (Update () (), t)
 	toStatus (Just Deleted) [f] = return (Delete (), f)
 	toStatus (Just s) fs = error $ "Don't know how to convert this git status to actions, status: " ++ show s ++ ", files: " ++ intercalate ", " fs
