@@ -67,6 +67,7 @@ remoteSvn host fpath untracked = ssh host $ do
 
 -- | Mark svn file according to action performed
 markSvn ∷ Entity → Action a → IO ()
+markSvn _ (Update _ _) = return ()
 markSvn (Entity False fpath) (Delete _) = void $ readProcess "svn" ["rm", fpath] ""
 markSvn (Entity True fpath) (Delete _) = void $ readProcess "svn" ["rm", fpath] ""
 markSvn (Entity False fpath) _ = void $ readProcess "svn" ["add", fpath] ""
@@ -74,6 +75,7 @@ markSvn (Entity True fpath) _ = void $ readProcess "svn" ["add", "-N", fpath] ""
 
 -- | Mark remote svn file according to action performed
 remoteMarkSvn ∷ Entity → Action a → ProcessM ()
+remoteMarkSvn _ (Update _ _) = return ()
 remoteMarkSvn (Entity False fpath) (Delete _) = invoke_ $ "svn rm " ++ quote fpath
 remoteMarkSvn (Entity True fpath) (Delete _) = invoke_ $ "svn rm " ++ quote fpath
 remoteMarkSvn (Entity False fpath) _ = invoke_ $ "svn add " ++ quote fpath

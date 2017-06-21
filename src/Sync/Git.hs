@@ -69,12 +69,14 @@ remoteGit host fpath untracked = ssh host $ do
 -- | Mark git file according to action performed
 markGit ∷ Entity → Action a → IO ()
 markGit (Entity True _) _ = return ()
+markGit _ (Update _ _) = return ()
 markGit (Entity False fpath) (Delete _) = void $ readProcess "git" ["rm", fpath] ""
 markGit (Entity False fpath) _ = void $ readProcess "git" ["add", fpath] ""
 
 -- | Mark remote git file according to action performed
 remoteMarkGit ∷ Entity → Action a → ProcessM ()
 remoteMarkGit (Entity True _) _ = return ()
+remoteMarkGit _ (Update _ _) = return ()
 remoteMarkGit (Entity False fpath) (Delete _) = invoke_ $ "git rm " ++ quote fpath
 remoteMarkGit (Entity False fpath) _ = invoke_ $ "git add " ++ quote fpath
 
