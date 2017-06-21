@@ -2,6 +2,7 @@
 
 module Sync.Git (
 	enumGit, git, remoteGit,
+	markGit, remoteMarkGit,
 
 	module Sync.Base,
 	module Sync.Repo
@@ -64,6 +65,18 @@ remoteGit host fpath untracked = ssh host $ do
 			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1"
 			r ← repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
 			return $ toList ∘ fmap (Create ∘ Just) ∘ mapKeys (over entityPath normalise) $ r
+
+-- | Mark git file according to action performed
+markGit ∷ Entity → Action a → IO ()
+markGit (Entity True _) _ = return ()
+markGit (Entity False fpath) (Delete _) = void $ readProcess "git" ["rm", fpath] ""
+markGit (Entity False fpath) _ = void $ readProcess "git" ["add", fpath] ""
+
+-- | Mark remote git file according to action performed
+remoteMarkGit ∷ Entity → Action a → ProcessM ()
+remoteMarkGit (Entity True _) _ = return ()
+remoteMarkGit (Entity False fpath) (Delete _) = invoke_ $ "git rm " ++ quote fpath
+remoteMarkGit (Entity False fpath) _ = invoke_ $ "git add " ++ quote fpath
 
 data GitStatus = Ignored | Untracked | Added | Unmerged | Modified | Renamed | Deleted | Copied deriving (Eq, Ord, Enum, Bounded)
 

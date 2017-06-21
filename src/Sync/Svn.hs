@@ -2,6 +2,7 @@
 
 module Sync.Svn (
 	enumSvn, svn, remoteSvn,
+	markSvn, remoteMarkSvn,
 
 	module Sync.Base,
 	module Sync.Repo
@@ -63,6 +64,20 @@ remoteSvn host fpath untracked = ssh host $ do
 			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1"
 			r ← repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
 			return $ toList ∘ fmap (Create ∘ Just) ∘ mapKeys (over entityPath normalise) $ r
+
+-- | Mark svn file according to action performed
+markSvn ∷ Entity → Action a → IO ()
+markSvn (Entity False fpath) (Delete _) = void $ readProcess "svn" ["rm", fpath] ""
+markSvn (Entity True fpath) (Delete _) = void $ readProcess "svn" ["rm", fpath] ""
+markSvn (Entity False fpath) _ = void $ readProcess "svn" ["add", fpath] ""
+markSvn (Entity True fpath) _ = void $ readProcess "svn" ["add", "-N", fpath] ""
+
+-- | Mark remote svn file according to action performed
+remoteMarkSvn ∷ Entity → Action a → ProcessM ()
+remoteMarkSvn (Entity False fpath) (Delete _) = invoke_ $ "svn rm " ++ quote fpath
+remoteMarkSvn (Entity True fpath) (Delete _) = invoke_ $ "svn rm " ++ quote fpath
+remoteMarkSvn (Entity False fpath) _ = invoke_ $ "svn add " ++ quote fpath
+remoteMarkSvn (Entity True fpath) _ = invoke_ $ "svn add -N " ++ quote fpath
 
 data SvnStatus = Added | Conflicted | Deleted | Ignored | Modified | Replaced | Untracked | Missing deriving (Eq, Ord, Enum, Bounded)
 

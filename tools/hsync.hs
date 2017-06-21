@@ -5,6 +5,7 @@ module Main (
 import Prelude.Unicode
 
 import Control.Applicative
+import Control.Monad (when)
 import Data.List (intersperse)
 import Data.Monoid
 import Options.Applicative
@@ -22,7 +23,7 @@ import Sync.Svn
 
 import Config
 
-data RepoType = Folder | Git Bool | Svn Bool
+data RepoType = Folder | Git Bool | Svn Bool deriving (Eq, Ord, Read, Show)
 
 data SyncMode = Default | Mirror | New | Overwrite | Skip deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
@@ -31,6 +32,7 @@ data Options = Options {
 	repoDestination ∷ Location,
 	repoType ∷ RepoType,
 	optionNoAction ∷ Bool,
+	optionNoMark ∷ Bool,
 	syncMode ∷ SyncMode,
 	showDiff ∷ Bool,
 	excludePats ∷ [String],
@@ -54,6 +56,7 @@ options = setBack <$> options' <*> switch (long "back" <> short 'b' <> help "bac
 		<*> argument auto (metavar "dst" <> help "destination, either local path either remote [host]:[path]")
 		<*> typeFlags
 		<*> switch (long "noaction" <> short 'n' <> help "don't perform any actions, just show what to be done")
+		<*> switch (long "nomark" <> help "don't mark synced files with version control system")
 		<*> mode
 		<*> switch (long "diff" <> short 'd' <> help "show diff, doesn't perform any actions")
 		<*> many (strOption (long "exclude" <> short 'e' <> help "exclude directories and files by regex"))
@@ -148,13 +151,22 @@ main = do
 						putStrLn "Conflicts:"
 						print unresolved'
 					| optionNoAction opts = mapM_ (write ∘ show) $ order resolved'
-					| otherwise = exec write resolved' (repoSource opts) (repoDestination opts)
+					| otherwise = do
+						sync write resolved' (repoSource opts) (repoDestination opts)
+						when canMark $ mark marker resolved' (repoDestination opts)
 			applyPatch
 			where
 				enumRepo r = (include' ∘ exclude') <$> case repoType opts of
 					Folder → (fmap Create ∘ mapWithKey dropDirTime) <$> enumDir r
 					Git untracked → enumGit r untracked
 					Svn untracked → enumSvn r untracked
+				canMark = repoType opts ≢ Folder
+				marker = case repoType opts of
+					Folder → error "no need for mark"
+					Git True → error "mark not implemented for untracked"
+					Svn True → error "mark not implemented for untracked"
+					Git False → Marker markGit remoteMarkGit
+					Svn False → Marker markSvn remoteMarkSvn
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
 				include'
 					| null (includePats opts) = id

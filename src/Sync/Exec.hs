@@ -1,5 +1,5 @@
 module Sync.Exec (
-	exec, order,
+	sync, Marker(..), mark, order,
 
 	module Sync.Base,
 	module Sync.Repo
@@ -21,30 +21,42 @@ import Sync.Base
 import Sync.Repo
 import Sync.Ssh
 
-exec ∷ (String → IO ()) → Patch Entity a → Location → Location → IO ()
-exec writeLine p (Local l) (Local r) = forM_ (order p) (safe writeLine exec') where
-	exec' (Entity False fpath) (Delete _) = removeFile $ r </> fpath
-	exec' (Entity True fpath) (Delete _) = removeDirectory $ r </> fpath
-	exec' (Entity False fpath) _ = do
+-- | Sync changes
+sync ∷ (String → IO ()) → Patch Entity a → Location → Location → IO ()
+sync writeLine p (Local l) (Local r) = forM_ (order p) (safe writeLine sync') where
+	sync' (Entity False fpath) (Delete _) = removeFile $ r </> fpath
+	sync' (Entity True fpath) (Delete _) = removeDirectory $ r </> fpath
+	sync' (Entity False fpath) _ = do
 		createDirectoryIfMissing True (takeDirectory (r </> fpath))
 		copyFileWithMetadata (l </> fpath) (r </> fpath)
-	exec' (Entity True fpath) _ = createDirectoryIfMissing True (r </> fpath)
-exec writeLine p (Local l) (Remote host r) = sftp host r $ forM_ (order p) (safe writeLine exec') where
-	exec' (Entity False fpath) (Delete _) = rm fpath
-	exec' (Entity True fpath) (Delete _) = rmdir fpath
-	exec' (Entity False fpath) _ = mkdirs (takeDirectory fpath) >> put False (l </> fpath) fpath
-	exec' (Entity True fpath) _ = mkdir fpath
-exec writeLine p (Remote host l) (Local r) = sftp host l $ forM_ (order p) (safe writeLine exec') where
-	exec' (Entity False fpath) (Delete _) = liftIO $ removeFile $ r </> fpath
-	exec' (Entity True fpath) (Delete _) = liftIO $ removeDirectory $ r </> fpath
-	exec' (Entity False fpath) _ = get False fpath (r </> fpath)
-	exec' (Entity True fpath) _ = liftIO $ createDirectory (r </> fpath)
-exec writeLine p (Remote lhost l) (Remote rhost r) = ssh lhost $ send sftpToRight >> forM_ (order p) (safe writeLine exec') where
-	exec' (Entity False fpath) (Delete _) = rm fpath
-	exec' (Entity True fpath) (Delete _) = rmdir fpath
-	exec' (Entity False fpath) _ = mkdirs (takeDirectory fpath) >> put False (l </> fpath) fpath
-	exec' (Entity True fpath) _ = mkdir fpath
+	sync' (Entity True fpath) _ = createDirectoryIfMissing True (r </> fpath)
+sync writeLine p (Local l) (Remote host r) = sftp host r $ forM_ (order p) (safe writeLine sync') where
+	sync' (Entity False fpath) (Delete _) = rm fpath
+	sync' (Entity True fpath) (Delete _) = rmdir fpath
+	sync' (Entity False fpath) _ = mkdirs (takeDirectory fpath) >> put False (l </> fpath) fpath
+	sync' (Entity True fpath) _ = mkdir fpath
+sync writeLine p (Remote host l) (Local r) = sftp host l $ forM_ (order p) (safe writeLine sync') where
+	sync' (Entity False fpath) (Delete _) = liftIO $ removeFile $ r </> fpath
+	sync' (Entity True fpath) (Delete _) = liftIO $ removeDirectory $ r </> fpath
+	sync' (Entity False fpath) _ = get False fpath (r </> fpath)
+	sync' (Entity True fpath) _ = liftIO $ createDirectory (r </> fpath)
+sync writeLine p (Remote lhost l) (Remote rhost r) = ssh lhost $ send sftpToRight >> forM_ (order p) (safe writeLine sync') where
+	sync' (Entity False fpath) (Delete _) = rm fpath
+	sync' (Entity True fpath) (Delete _) = rmdir fpath
+	sync' (Entity False fpath) _ = mkdirs (takeDirectory fpath) >> put False (l </> fpath) fpath
+	sync' (Entity True fpath) _ = mkdir fpath
 	sftpToRight = "sftp " ++ rhost ++ ":" ++ quote r
+
+data Marker a = Marker {
+	localMark ∷ Entity → Action a → IO (),
+	remoteMark ∷ Entity → Action a → ProcessM () }
+
+-- | Mark changes in version control system (git/svn)
+mark ∷ Marker a → Patch Entity a → Location → IO ()
+mark m p (Local path) = withDir path $ forM_ (order p) mark' where
+	mark' (RepoItem e act) = localMark m e act
+mark m p (Remote host path) = ssh host $ cd path >> forM_ (order p) mark' where
+	mark' (RepoItem e act) = remoteMark m e act
 
 -- | Order actions so that deletions goes first (from deepest to root), and additions goes after (from root to deepest)
 order ∷ Patch Entity a → [RepoItem Entity (Action a)]

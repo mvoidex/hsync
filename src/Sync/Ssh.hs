@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 module Sync.Ssh (
+	ProcessM,
+
 	run, ssh, sftp,
 	send, wait,
 	invoke, invoke_,
@@ -41,6 +43,8 @@ instance Show ProcessError where
 		header = unwords (cmd : args) ++ " ⇒ " ++ show code
 
 instance Exception ProcessError
+
+type ProcessM a = ReaderT ProcessDuplex (ExceptT (Int, [String]) IO) a
 
 run ∷ String → [String] → (String → String) → ([String] → [String]) → ProcessM a → IO a
 run cmd args echo' filter' act = do
@@ -162,8 +166,6 @@ data ProcessDuplex = ProcessDuplex {
 	duplexErr ∷ Chan (Maybe String),
 	duplexProcess ∷ ProcessHandle,
 	duplexEcho ∷ String → String }
-
-type ProcessM a = ReaderT ProcessDuplex (ExceptT (Int, [String]) IO) a
 
 result ∷ ExitCode → [String] → [String] → ProcessM [String]
 result ExitSuccess out _ = return out
