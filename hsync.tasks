@@ -8,6 +8,7 @@ hsync:
 	☐	`git rev-parse HEAD` to compare bases
 	☐	Allow syncing single files
 	☐	When syncing to right in combine mode, there's no need to enumerate all files in right (it may be slow)
+	☐	Different provider for left and right (for example - left is 'git' and right is default, in this case we just sync only added/modified files)
 	✔	Support relative --git path @done (17-05-26 14:35)
 
 	☐	Config (in ~/.hsync)

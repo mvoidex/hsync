@@ -1,7 +1,7 @@
 module Sync.Base (
 	module Sync.Base.Types,
 
-	empty, nullRepo, repo, toList,
+	empty, nullRepo, repo, toList, items,
 	diff, patch, revert, merge, chain, rebase,
 	resolve, resolveA, tryResolve, tryResolveA,
 	resolved, unresolved,
@@ -36,6 +36,10 @@ repo = Repo ∘ M.fromList
 -- | Get list of entities
 toList ∷ Repo k a → [(k, a)]
 toList (Repo r) = M.toList r
+
+-- | Get list of entities as @RepoItem@
+items ∷ Repo k a → [RepoItem k a]
+items = map (uncurry RepoItem) ∘ toList
 
 -- | Compare repositories
 diff ∷ Ord k ⇒ Repo k a → Repo k a → Diff k a

@@ -147,7 +147,7 @@ main = do
 					| not (nullRepo unresolved') = do
 						putStrLn "Conflicts:"
 						print unresolved'
-					| optionNoAction opts = mapM_ write $ lines $ show resolved'
+					| optionNoAction opts = mapM_ (write ∘ show) $ order resolved'
 					| otherwise = exec write resolved' (repoSource opts) (repoDestination opts)
 			applyPatch
 			where
