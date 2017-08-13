@@ -10,6 +10,8 @@ hsync:
 	☐	When syncing to right in combine mode, there's no need to enumerate all files in right (it may be slow)
 	☐	Different provider for left and right (for example - left is 'git' and right is default, in this case we just sync only added/modified files)
 	✔	Support relative --git path @done (17-05-26 14:35)
+	svn:
+		☐	move folder on left (foo → bar), then modify some file and delete it, it will be marked as deleted on left, but won't present on right, and then `svn rm bar/file` will fail
 
 	☐	Config (in ~/.hsync)
 		☐	Special excludes, for example '.git' (for git repos), 'dist' (for haskell), which you may specify with flag '--filter' ('--filter haskell')

@@ -19,11 +19,12 @@ library
     Sync.Base.Internal
     Sync.Dir
     Sync.Git
+    Sync.Mode
     Sync.Svn
     Sync.Repo
     Sync.Ssh
   build-depends:
-    base >= 4.9 && < 4.10,
+    base >= 4.9 && < 6.0,
     base-unicode-symbols == 0.2.*,
     containers,
     directory,
@@ -44,7 +45,7 @@ test-suite test
   main-is: Test.hs
   build-depends:
     hsync,
-    base >= 4.9 && < 4.10,
+    base >= 4.9 && < 6.0,
     base-unicode-symbols == 0.2.*,
     containers,
     hspec >= 2.3 && < 2.5
@@ -55,8 +56,10 @@ test-suite test
 
 executable hsync
   main-is: hsync.hs
+  other-modules:
+    Config
   build-depends:
-    base >= 4.9 && < 4.10,
+    base >= 4.9 && < 6.0,
     base-unicode-symbols == 0.2.*,
     hsync,
     aeson == 1.2.*,

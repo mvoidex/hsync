@@ -5,6 +5,7 @@ module Main (
 import Prelude.Unicode
 
 import Control.Applicative
+import Control.Arrow
 import Control.Monad (when)
 import Data.List (intersperse)
 import Data.Monoid
@@ -15,17 +16,17 @@ import System.FilePath (FilePath)
 import System.IO
 import Text.Format
 
+import qualified Sync.Base as R (empty)
 import Sync.Base.Internal (mapWithKey)
 import Sync.Exec
 import Sync.Dir
 import Sync.Git
+import Sync.Mode
 import Sync.Svn
 
 import Config
 
 data RepoType = Folder | Git Bool | Svn Bool deriving (Eq, Ord, Read, Show)
-
-data SyncMode = Default | Mirror | New | Overwrite | Skip deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
 data Options = Options {
 	repoSource ∷ Location,
@@ -33,14 +34,14 @@ data Options = Options {
 	repoType ∷ RepoType,
 	optionNoAction ∷ Bool,
 	optionNoMark ∷ Bool,
-	syncMode ∷ SyncMode,
+	syncMode ∷ Mode,
 	showDiff ∷ Bool,
 	excludePats ∷ [String],
 	includePats ∷ [String],
 	configFile ∷ Maybe FilePath,
 	verboseOutput ∷ Bool }
 
-mode ∷ Parser SyncMode
+mode ∷ Parser Mode
 mode = mirror' <|> new' <|> overwrite' <|> skip' <|> pure Default where
 	mirror' = flag' Mirror (long "mirror" <> short 'm' <> help "mirror mode: `dst` will become in same state as `src`, i.e. new files will be deleted, unexistant will be created etc.")
 	new' = flag' New (long "new" <> help "new mode: select newest file when syncing")
@@ -128,45 +129,58 @@ main = do
 				Svn False → "svn"
 				Svn True → "svn=u")
 			verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
-			src ← enumRepo (repoSource opts)
+			(src, usrc) ← enumRepo (repoSource opts)
 			verbose opts "✓"
 			verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
-			dst ← enumRepo (repoDestination opts)
+			(dst, udst) ← enumRepo (repoDestination opts)
 			verbose opts "✓"
 			let
-				patch' = case syncMode opts of
-					Default → combined
-					Mirror → revert dst `chain` src
-					New → tryResolve newest combined
-					Overwrite → fmap Merged ∘ resolve preferLeft $ combined
-					Skip → fmap Merged ∘ resolved $ combined
-					where
-						combined = rebase src dst
+				patch' = syncPatch (syncMode opts) src dst
+				upatch' = syncPatch (syncMode opts) usrc udst
+
+				-- resolved parts
 				resolved' = resolved patch'
+				uresolved' = resolved upatch'
+
+				-- resolved and merged into one part
+				-- used to perforrm copy/delete actions
+				merged' = resolve preferLeftModify $ merge resolved' uresolved' where
+					preferLeftModify _ l (Delete _) = l
+					preferLeftModify _ (Delete _) r = r
+					preferLeftModify _ l (Create _) = l
+					preferLeftModify _ (Create _) r = r
+					preferLeftModify _ l _ = l
+
+				-- unresolved parts
 				unresolved' = unresolved patch'
+				unuresolved' = unresolved upatch'
 
 				applyPatch
-					| showDiff opts = print $ diff src dst
+					| showDiff opts = do
+						print $ diff src dst
+						print $ diff usrc udst
 					| not (nullRepo unresolved') = do
 						putStrLn "Conflicts:"
 						print unresolved'
-					| optionNoAction opts = mapM_ (write ∘ show) $ order resolved'
+						print unuresolved'
+					| optionNoAction opts = mapM_ (write ∘ show) $ order merged'
 					| otherwise = do
-						sync write resolved' (repoSource opts) (repoDestination opts)
+						sync write merged' (repoSource opts) (repoDestination opts)
 						when canMark $ mark marker resolved' (repoDestination opts)
 			applyPatch
 			where
-				enumRepo r = (include' ∘ exclude') <$> case repoType opts of
-					Folder → (fmap Create ∘ mapWithKey dropDirTime) <$> enumDir r
-					Git untracked → enumGit r untracked
-					Svn untracked → enumSvn r untracked
+				-- Returns two repos: versioned files and unversioned
+				enumRepo r = (filters' *** filters') <$> case repoType opts of
+					Folder → ((,) R.empty ∘ repoAsPatch) <$> enumDir r
+					Git untracked → second repoAsPatch <$> enumGit r untracked
+					Svn untracked → second repoAsPatch <$> enumSvn r untracked
+				repoAsPatch = fmap Create ∘ mapWithKey dropDirTime
 				canMark = repoType opts ≢ Folder
 				marker = case repoType opts of
 					Folder → error "no need for mark"
-					Git True → error "mark not implemented for untracked"
-					Svn True → error "mark not implemented for untracked"
-					Git False → Marker markGit remoteMarkGit
-					Svn False → Marker markSvn remoteMarkSvn
+					Git _ → Marker markGit remoteMarkGit
+					Svn _ → Marker markSvn remoteMarkSvn
+				filters' = include' ∘ exclude'
 				exclude' = exclude (\e → or [match pat e | pat ← excludePats opts])
 				include'
 					| null (includePats opts) = id

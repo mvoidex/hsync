@@ -13,6 +13,7 @@ import Prelude.Unicode
 import Control.Arrow
 import Control.Lens
 import Control.Monad.Except
+import Data.Either (partitionEithers)
 import Data.Maybe (mapMaybe, catMaybes)
 import Data.Time.Clock
 import Data.Tuple (swap)
@@ -28,15 +29,18 @@ import Sync.Repo
 import Sync.Dir
 import Sync.Ssh
 
-enumSvn ∷ Location → Bool → IO (Patch Entity (Maybe UTCTime))
+enumSvn ∷ Location → Bool → IO (Patch Entity (Maybe UTCTime), Repo Entity UTCTime)
 enumSvn = location svn remoteSvn
 
-svn ∷ FilePath → Bool → IO (Patch Entity (Maybe UTCTime))
+svn ∷ FilePath → Bool → IO (Patch Entity (Maybe UTCTime), Repo Entity UTCTime)
 svn fpath untracked = withDir fpath $ do
 	status ← lines <$> readProcess "svn" ("status" : if untracked then [] else ["-q"]) ""
-	rsvn ← traverse (uncurry getStat) (parseSvnStatus status)
-	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rsvn
-	return $ repo $ dropDirTimes $ rsvn ++ udirs
+	let
+		(trackedList, untrackedList) = parseSvnStatus status
+	rsvn ← traverse (uncurry getStat) trackedList
+	usvn ← traverse stat' untrackedList
+	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ usvn
+	return (repo rsvn, repo $ usvn ++ udirs)
 	where
 		stat' f = do
 			tm ← getMTime f
@@ -47,15 +51,18 @@ svn fpath untracked = withDir fpath $ do
 		getStat (Delete _) f = return (Entity False f, Delete Nothing)
 		untrackedDir d = do
 			dirCts ← dir d
-			return $ toList ∘ fmap (Create ∘ Just) ∘ mapKeys (over entityPath (normalise ∘ (d </>))) $ dirCts
+			return $ toList ∘ mapKeys (over entityPath (normalise ∘ (d </>))) $ dirCts
 
-remoteSvn ∷ String → FilePath → Bool → IO (Patch Entity (Maybe UTCTime))
+remoteSvn ∷ String → FilePath → Bool → IO (Patch Entity (Maybe UTCTime), Repo Entity UTCTime)
 remoteSvn host fpath untracked = ssh host $ do
 	cd fpath
 	out ← invoke $ unwords $ "svn" : ("status" : if untracked then [] else ["-q"])
-	rsvn ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) (parseSvnStatus out))
-	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ rsvn
-	return $ repo $ dropDirTimes $ rsvn ++ udirs
+	let
+		(trackedList, untrackedList) = parseSvnStatus out
+	rsvn ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) trackedList)
+	usvn ← traverse stat untrackedList
+	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ usvn
+	return (repo rsvn, repo $ usvn ++ udirs)
 	where
 		getStat (Create _) f = second (Create ∘ Just) <$> stat f
 		getStat (Update _ _) f = second (Update Nothing ∘ Just) <$> stat f
@@ -63,21 +70,21 @@ remoteSvn host fpath untracked = ssh host $ do
 		untrackedDir d = do
 			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1"
 			r ← repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
-			return $ toList ∘ fmap (Create ∘ Just) ∘ mapKeys (over entityPath normalise) $ r
+			return $ toList ∘ mapKeys (over entityPath normalise) $ r
 
 -- | Mark svn file according to action performed
 markSvn ∷ Entity → Action a → IO ()
 markSvn _ (Update _ _) = return ()
-markSvn (Entity False fpath) (Delete _) = void $ readProcess "svn" ["rm", fpath] ""
-markSvn (Entity True fpath) (Delete _) = void $ readProcess "svn" ["rm", fpath] ""
+markSvn (Entity False fpath) (Delete _) = void $ readProcess "svn" ["rm", "--keep-local", fpath] ""
+markSvn (Entity True fpath) (Delete _) = void $ readProcess "svn" ["rm", "--keep-local", fpath] ""
 markSvn (Entity False fpath) _ = void $ readProcess "svn" ["add", fpath] ""
 markSvn (Entity True fpath) _ = void $ readProcess "svn" ["add", "-N", fpath] ""
 
 -- | Mark remote svn file according to action performed
 remoteMarkSvn ∷ Entity → Action a → ProcessM ()
 remoteMarkSvn _ (Update _ _) = return ()
-remoteMarkSvn (Entity False fpath) (Delete _) = invoke_ $ "svn rm " ++ quote fpath
-remoteMarkSvn (Entity True fpath) (Delete _) = invoke_ $ "svn rm " ++ quote fpath
+remoteMarkSvn (Entity False fpath) (Delete _) = invoke_ $ "svn rm --keep-local " ++ quote fpath
+remoteMarkSvn (Entity True fpath) (Delete _) = invoke_ $ "svn rm --keep-local " ++ quote fpath
 remoteMarkSvn (Entity False fpath) _ = invoke_ $ "svn add " ++ quote fpath
 remoteMarkSvn (Entity True fpath) _ = invoke_ $ "svn add -N " ++ quote fpath
 
@@ -101,8 +108,8 @@ instance Read SvnStatus where
 	readsPrec _ "" = []
 	readsPrec _ (s:ss) = maybe [] (\st → [(st, ss)]) $ lookup s (map swap svnStates)
 
-parseSvnStatus ∷ [String] → [(Action (), FilePath)]
-parseSvnStatus = mapMaybe parse' where
+parseSvnStatus ∷ [String] → ([(Action (), FilePath)], [FilePath])
+parseSvnStatus = partitionEithers ∘ mapMaybe parse' where
 	parse' str = fmap ((`toStatus` file) ∘ simplifyStatus) ∘ readMaybe $ [s] where
 		(s:_, rest) = splitAt 8 str
 		file = joinPath $ F.splitDirectories rest
@@ -111,18 +118,11 @@ parseSvnStatus = mapMaybe parse' where
 	simplifyStatus Conflicted = Modified
 	simplifyStatus Ignored = Added
 	simplifyStatus Replaced = Modified
-	simplifyStatus Untracked = Added
 	simplifyStatus Missing = Deleted
 	simplifyStatus s = s
 
-	toStatus Added f = (Create (), f)
-	toStatus Modified f = (Update () (), f)
-	toStatus Deleted f = (Delete (), f)
+	toStatus Added f = Left (Create (), f)
+	toStatus Modified f = Left (Update () (), f)
+	toStatus Deleted f = Left (Delete (), f)
+	toStatus Untracked f = Right f
 	toStatus status f = error $ "Don't know how to convert this svn status to actions, status: " ++ show status ++ ", file: " ++ f
-
--- We don't want compare directory creation times, so drop them
-dropDirTimes ∷ [(Entity, Action (Maybe UTCTime))] → [(Entity, Action (Maybe UTCTime))]
-dropDirTimes = map dropDirTime where
-	dropDirTime (e, mtm)
-		| isDir e = (e, fmap (const Nothing) mtm)
-		| otherwise = (e, mtm)
