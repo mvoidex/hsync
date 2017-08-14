@@ -38,7 +38,7 @@ svn fpath untracked = withDir fpath $ do
 	let
 		(trackedList, untrackedList) = parseSvnStatus status
 	rsvn ← traverse (uncurry getStat) trackedList
-	usvn ← traverse stat' untrackedList
+	usvn ← filterM (fmap not ∘ pathIsSymbolicLink) untrackedList >>= traverse stat'
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ usvn
 	return (repo rsvn, repo $ usvn ++ udirs)
 	where
@@ -60,7 +60,7 @@ remoteSvn host fpath untracked = ssh host $ do
 	let
 		(trackedList, untrackedList) = parseSvnStatus out
 	rsvn ← fmap catMaybes (traverse ((`catchError` const (return Nothing)) ∘ fmap Just ∘ uncurry getStat) trackedList)
-	usvn ← traverse stat untrackedList
+	usvn ← filterM (fmap not ∘ isLink) untrackedList >>= traverse stat
 	udirs ← fmap concat ∘ mapM (untrackedDir ∘ view entityPath) ∘ filter isDir ∘ map fst $ usvn
 	return (repo rsvn, repo $ usvn ++ udirs)
 	where
@@ -68,7 +68,7 @@ remoteSvn host fpath untracked = ssh host $ do
 		getStat (Update _ _) f = second (Update Nothing ∘ Just) <$> stat f
 		getStat (Delete _) f = return (Entity False f, Delete Nothing)
 		untrackedDir d = do
-			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1"
+			cts ← invoke $ "find '" ++ d ++ "' -mindepth 1 -type f -or -type d"
 			r ← repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
 			return $ toList ∘ mapKeys (over entityPath normalise) $ r
 

@@ -9,7 +9,7 @@ module Sync.Ssh (
 	close, kill,
 
 	cd,
-	stat,
+	stat_, stat, isLink,
 	put, get, rm, rmdir, mkdir, mkdirs,
 	quote,
 
@@ -119,18 +119,26 @@ kill = do
 cd ∷ FilePath → ProcessM ()
 cd fpath = invoke_ $ "cd " ++ quote fpath
 
+stat_ ∷ FilePath → ProcessM (String, UTCTime)
+stat_ fpath = do
+	[tm, ftype] ← take 2 <$> invoke ("stat '" ++ fpath ++ "' -c %Y$'\\n'%F")
+	case readMaybe tm of
+		Just tm' → return (ftype, posixSecondsToUTCTime ∘ fromInteger $ tm')
+		Nothing → throwError (0, ["stat: can't parse time " ++ tm])
+
 stat ∷ FilePath → ProcessM (Entity, UTCTime)
 stat fpath = do
-	(tm : ftype) ← (words ∘ head) <$> invoke ("stat '" ++ fpath ++ "' -c '%Y %F'")
+	(ftype, tm) ← stat_ fpath
 	let
 		getType
-			| "directory" ∈ ftype = return True
-			| "file" ∈ ftype = return False
-			| otherwise = throwError (0, ["unknown file type: " ++ unwords ftype])
+			| "directory" ≡ ftype = return True
+			| "file" ≡ ftype = return False
+			| otherwise = throwError (0, ["unknown file type: " ++ ftype])
 	t ← getType
-	case readMaybe tm of
-		Just tm' → return (Entity t fpath, posixSecondsToUTCTime ∘ fromInteger $ tm')
-		Nothing → throwError (0, ["stat: can't parse time " ++ tm])
+	return (Entity t fpath, tm)
+
+isLink ∷ FilePath → ProcessM Bool
+isLink fpath = ((≡ "symbolic link") ∘ fst) <$> stat_ fpath
 
 put ∷ Bool → FilePath → FilePath → ProcessM ()
 put recursive from to = invoke_ $ unwords [

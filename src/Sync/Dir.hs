@@ -29,7 +29,7 @@ dir fpath = withDir fpath $ do
 	where
 		getDir f = getDir' f <|> return []
 		getDir' f = do
-			cts ← (map (f </>) ∘ filter (∉ [".", ".."])) <$> getDirectoryContents f
+			cts ← ((map (f </>) ∘ filter (∉ [".", ".."])) <$> getDirectoryContents f) >>= filterM (fmap not ∘ pathIsSymbolicLink)
 			scts ← mapM getDir cts
 			return $ concat $ cts : scts
 		getStat f = do
@@ -42,5 +42,5 @@ dir fpath = withDir fpath $ do
 remoteDir ∷ String → FilePath → IO (Repo Entity UTCTime)
 remoteDir host fpath = ssh host $ do
 	cd fpath
-	cts ← invoke "find . -mindepth 1"
+	cts ← invoke "find . -mindepth 1 -type f -or -type d"
 	repo <$> fmap catMaybes (mapM (\f → fmap Just (stat f) `catchError` const (return Nothing)) cts)
