@@ -130,15 +130,16 @@ stat ∷ FilePath → ProcessM (Entity, UTCTime)
 stat fpath = do
 	(ftype, tm) ← stat_ fpath
 	let
+		ftype' = words ftype
 		getType
-			| "directory" ≡ ftype = return True
-			| "regular file" ≡ ftype = return False
+			| "directory" ∈ ftype' = return True
+			| "file" ∈ ftype' = return False
 			| otherwise = throwError (0, ["unknown file type: " ++ ftype])
 	t ← getType
 	return (Entity t fpath, tm)
 
 isLink ∷ FilePath → ProcessM Bool
-isLink fpath = ((≡ "symbolic link") ∘ fst) <$> stat_ fpath
+isLink fpath = (("link" ∈) ∘ words ∘ fst) <$> stat_ fpath
 
 put ∷ Bool → FilePath → FilePath → ProcessM ()
 put recursive from to = invoke_ $ unwords [
