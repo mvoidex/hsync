@@ -132,7 +132,7 @@ stat fpath = do
 	let
 		getType
 			| "directory" ≡ ftype = return True
-			| "file" ≡ ftype = return False
+			| "regular file" ≡ ftype = return False
 			| otherwise = throwError (0, ["unknown file type: " ++ ftype])
 	t ← getType
 	return (Entity t fpath, tm)
