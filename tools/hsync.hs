@@ -172,8 +172,8 @@ main = do
 				-- Returns two repos: versioned files and unversioned
 				enumRepo r = (filters' *** filters') <$> case repoType opts of
 					Folder → ((,) R.empty ∘ repoAsPatch) <$> enumDir r
-					Git untracked → second repoAsPatch <$> enumGit r untracked
-					Svn untracked → second repoAsPatch <$> enumSvn r untracked
+					Git untracked → (mapWithKey unsetDirTime *** repoAsPatch) <$> enumGit r untracked
+					Svn untracked → (mapWithKey unsetDirTime *** repoAsPatch) <$> enumSvn r untracked
 				repoAsPatch = fmap Create ∘ mapWithKey dropDirTime
 				canMark = repoType opts ≢ Folder
 				marker = case repoType opts of
@@ -188,6 +188,9 @@ main = do
 				dropDirTime e
 					| isDir e = const Nothing
 					| otherwise = Just
+				unsetDirTime e
+					| isDir e = fmap (const Nothing)
+					| otherwise = id
 
 verbose ∷ Options → String → IO ()
 verbose opts
