@@ -159,7 +159,7 @@ main = do
 					| showDiff opts = do
 						print $ diff src dst
 						print $ diff usrc udst
-					| not (nullRepo unresolved') = do
+					| not (nullRepo unresolved') ∨ not (nullRepo unuresolved') = do
 						putStrLn "Conflicts:"
 						print unresolved'
 						print unuresolved'

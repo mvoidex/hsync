@@ -5,7 +5,7 @@ module Sync.Base (
 	diff, patch, revert, merge, chain, rebase,
 	resolve, resolveA, tryResolve, tryResolveA,
 	resolved, unresolved,
-	newest, preferLeft, preferRight,
+	newest, newestLeft, preferLeft, preferRight,
 	apply,
 	exclude, include
 	) where
@@ -15,6 +15,7 @@ import Prelude.Unicode
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((***), (&&&))
+import Control.Monad (guard)
 import Data.Either
 import qualified Data.Map as M
 
@@ -149,6 +150,18 @@ newest _ l r = do
 	ldst ← dst l
 	rdst ← dst r
 	return $ if ldst > rdst then l else r
+	where
+		dst (Create v) = Just v
+		dst (Update _ v) = Just v
+		dst (Delete _) = Nothing
+
+-- | Resolve tactic: select left, if it's newer
+newestLeft ∷ Ord a ⇒ k → Action a → Action a → Maybe (Action a)
+newestLeft _ l r = do
+	ldst ← dst l
+	rdst ← dst r
+	guard (ldst > rdst)
+	return l
 	where
 		dst (Create v) = Just v
 		dst (Update _ v) = Just v

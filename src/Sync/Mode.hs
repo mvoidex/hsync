@@ -15,7 +15,7 @@ syncPatch ∷ (Ord k, Ord a) ⇒ Mode → Patch k a → Patch k a → Merge k a
 syncPatch m src dst = case m of
 	Default → combined
 	Mirror → revert dst `chain` src
-	New → tryResolve newest combined
+	New → tryResolve newestLeft combined
 	Overwrite → fmap Merged ∘ resolve preferLeft $ combined
 	Skip → fmap Merged ∘ resolved $ combined
 	where
