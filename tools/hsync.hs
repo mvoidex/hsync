@@ -143,13 +143,13 @@ main = do
 				uresolved' = resolved upatch'
 
 				-- resolved and merged into one part
-				-- used to perforrm copy/delete actions
+				-- used to perform copy/delete actions
 				merged' = resolve preferLeftModify $ merge resolved' uresolved' where
-					preferLeftModify _ l (Delete _) = l
-					preferLeftModify _ (Delete _) r = r
-					preferLeftModify _ l (Create _) = l
-					preferLeftModify _ (Create _) r = r
-					preferLeftModify _ l _ = l
+					preferLeftModify _ l (Delete _) = Just l
+					preferLeftModify _ (Delete _) r = Just r
+					preferLeftModify _ l (Create _) = Just l
+					preferLeftModify _ (Create _) r = Just r
+					preferLeftModify _ l _ = Just l
 
 				-- unresolved parts
 				unresolved' = unresolved patch'

@@ -15,7 +15,6 @@ import Prelude.Unicode
 
 import Control.Applicative ((<$>))
 import Control.Arrow ((***), (&&&))
-import Control.Monad (guard)
 import Data.Either
 import qualified Data.Map as M
 
@@ -105,32 +104,34 @@ rebase l r = mapMaybe rebase' $ diff l r where
 		| otherwise = Just $ Conflict l' r'
 
 -- | Resolve conflicts
-resolve ∷ (k → Action a → Action a → Action a) → Merge k a → Patch k a
-resolve fn = mapWithKey resolve' where
-	resolve' _ (Merged v) = v
+resolve ∷ (k → Action a → Action a → Maybe (Action a)) → Merge k a → Patch k a
+resolve fn = mapMaybeWithKey resolve' where
+	resolve' _ (Merged v) = Just v
 	resolve' k (Conflict l r) = fn k l r
 
 -- | Resolve with applicative
-resolveA ∷ Applicative t ⇒ (k → Action a → Action a → t (Action a)) → Merge k a → t (Patch k a)
-resolveA fn = traverseWithKey resolveA' where
-	resolveA' _ (Merged v) = pure v
+resolveA ∷ Applicative t ⇒ (k → Action a → Action a → t (Maybe (Action a))) → Merge k a → t (Patch k a)
+resolveA fn = traverseMaybeWithKey resolveA' where
+	resolveA' _ (Merged v) = pure $ Just v
 	resolveA' k (Conflict l r) = fn k l r
 
 -- | Try resolve conflicts, producing new merged-state
-tryResolve ∷ (k → Action a → Action a → Maybe (Action a)) → Merge k a → Merge k a
-tryResolve fn = mapWithKey tryResolve' where
+tryResolve ∷ (k → Action a → Action a → Maybe (Maybe (Action a))) → Merge k a → Merge k a
+tryResolve fn = mapMaybeWithKey tryResolve' where
 	tryResolve' k (Conflict l r) = case fn k l r of
-		Nothing → Conflict l r
-		Just v → Merged v
-	tryResolve' _ (Merged v) = Merged v
+		Just (Just v) → Just $ Merged v
+		Just Nothing → Nothing
+		Nothing → Just $ Conflict l r
+	tryResolve' _ (Merged v) = Just $ Merged v
 
 -- | @tryResolve@ with applicative action
-tryResolveA ∷ Applicative t ⇒ (k → Action a → Action a → t (Maybe (Action a))) → Merge k a → t (Merge k a)
-tryResolveA fn = traverseWithKey tryResolveA' where
+tryResolveA ∷ Applicative t ⇒ (k → Action a → Action a → t (Maybe (Maybe (Action a)))) → Merge k a → t (Merge k a)
+tryResolveA fn = traverseMaybeWithKey tryResolveA' where
 	tryResolveA' k (Conflict l r) = toMerged <$> fn k l r where
-		toMerged Nothing = Conflict l r
-		toMerged (Just v) = Merged v
-	tryResolveA' _ (Merged v) = pure $ Merged v
+		toMerged (Just (Just v)) = Just $ Merged v
+		toMerged (Just Nothing) = Nothing
+		toMerged Nothing = Just $ Conflict l r
+	tryResolveA' _ (Merged v) = pure $ Just $ Merged v
 
 -- | Get resolved part
 resolved ∷ Merge k a → Patch k a
@@ -145,35 +146,34 @@ unresolved = filter unresolved' where
 	unresolved' _ = False
 
 -- | Resolve tactic: select newest
-newest ∷ Ord a ⇒ k → Action a → Action a → Maybe (Action a)
+newest ∷ Ord a ⇒ k → Action a → Action a → Maybe (Maybe (Action a))
 newest _ l r = do
 	ldst ← dst l
 	rdst ← dst r
-	return $ if ldst > rdst then l else r
+	return $ Just $ if ldst > rdst then l else r
 	where
 		dst (Create v) = Just v
 		dst (Update _ v) = Just v
 		dst (Delete _) = Nothing
 
 -- | Resolve tactic: select left, if it's newer
-newestLeft ∷ Ord a ⇒ k → Action a → Action a → Maybe (Action a)
+newestLeft ∷ Ord a ⇒ k → Action a → Action a → Maybe (Maybe (Action a))
 newestLeft _ l r = do
 	ldst ← dst l
 	rdst ← dst r
-	guard (ldst > rdst)
-	return l
+	return $ if ldst > rdst then Just l else Nothing
 	where
 		dst (Create v) = Just v
 		dst (Update _ v) = Just v
 		dst (Delete _) = Nothing
 
 -- | Resolve tactic: prefer left
-preferLeft ∷ k → Action a → Action a → Action a
-preferLeft _ l _ = l
+preferLeft ∷ k → Action a → Action a → Maybe (Action a)
+preferLeft _ l _ = Just l
 
 -- | Resolve tactic: prefer right
-preferRight ∷ k → Action a → Action a → Action a
-preferRight _ _ r = r
+preferRight ∷ k → Action a → Action a → Maybe (Action a)
+preferRight _ _ r = Just r
 
 -- | Returns valid and invalid part, which can't be applied:
 -- * Create - already exists

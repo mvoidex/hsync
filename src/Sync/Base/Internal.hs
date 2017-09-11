@@ -2,7 +2,9 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module Sync.Base.Internal (
-	swapChange, lookup, filter, filterWithKey, mapMaybe, mapEither, mapKeys, mapWithKey, traverseWithKey
+	swapChange, lookup, filter, filterWithKey, mapMaybe, mapEither, mapKeys,
+	mapWithKey, mapMaybeWithKey,
+	traverseWithKey, traverseMaybeWithKey
 	) where
 
 import Prelude hiding (map, filter, null, lookup)
@@ -36,10 +38,18 @@ mapEither fn (Repo r) = (Repo b', Repo c') where
 mapKeys ∷ Ord k' ⇒ (k → k') → Repo k a → Repo k' a
 mapKeys f (Repo r) = Repo $ M.mapKeys f r
 
--- | Make with keys
+-- | Map with keys
 mapWithKey ∷ (k → a → b) → Repo k a → Repo k b
 mapWithKey f (Repo r) = Repo $ M.mapWithKey f r
 
--- | Make with keys
+-- | Map maybe with keys
+mapMaybeWithKey ∷ (k → a → Maybe b) → Repo k a → Repo k b
+mapMaybeWithKey f (Repo r) = Repo $ M.mapMaybeWithKey f r
+
+-- | Traverse with keys
 traverseWithKey ∷ Applicative t ⇒ (k → a → t b) → Repo k a → t (Repo k b)
 traverseWithKey f (Repo r) = Repo <$> M.traverseWithKey f r
+
+-- | Traverse maybe with keys
+traverseMaybeWithKey ∷ Applicative t ⇒ (k → a → t (Maybe b)) → Repo k a → t (Repo k b)
+traverseMaybeWithKey f (Repo r) = Repo <$> M.traverseMaybeWithKey f r
