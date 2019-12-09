@@ -80,7 +80,7 @@ order = sortBy cmp ∘ items where
 		cmpPath' [] _ = if naturalOrder then LT else GT
 
 safe ∷ (MonadCatch m, MonadIO m) ⇒ (String → IO ()) → (Entity → Action a → m ()) → RepoItem Entity (Action a) → m ()
-safe writeLine fn (RepoItem e tm) = handle (liftIO ∘ onError) (fn e tm >> liftIO onOk) where
-	onError ∷ SomeException → IO ()
-	onError err = writeLine $ show e ++ ": " ++ show err
+safe writeLine fn (RepoItem e tm) = handle (liftIO ∘ onErr) (fn e tm >> liftIO onOk) where
+	onErr ∷ SomeException → IO ()
+	onErr err = writeLine $ show e ++ ": " ++ show err
 	onOk = writeLine $ show $ RepoItem e tm
