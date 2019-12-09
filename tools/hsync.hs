@@ -131,11 +131,15 @@ main = do
 				Git True → "git=u"
 				Svn False → "svn"
 				Svn True → "svn=u")
-			verbose opts $ format "getting {0}..." ~~ show (repoSource opts)
+			verbose opts $ format "getting {0} ..." ~~ show (repoSource opts)
 			(src, usrc) ← enumRepo (repoSource opts)
+			verbose opts $ format "tracked state:\n{0}" ~~ show src
+			verbose opts $ format "untracked state:\n{0}" ~~ show usrc
 			verbose opts "✓"
-			verbose opts $ format "getting {0}..." ~~ show (repoDestination opts)
+			verbose opts $ format "getting {0} ..." ~~ show (repoDestination opts)
 			(dst, udst) ← enumRepo (repoDestination opts)
+			verbose opts $ format "tracked state:\n{0}" ~~ show dst
+			verbose opts $ format "untracked state:\n{0}" ~~ show udst
 			verbose opts "✓"
 			let
 				patch' = syncPatch (syncMode opts) src dst
@@ -203,11 +207,12 @@ verbose opts
 	| otherwise = const $ return ()
 
 write ∷ String → IO ()
-write s@('✓':_) = color Green $ putStrLn s
-write s@('+':_) = color Green $ putStrLn s
-write s@('✗':_) = color Red $ putStrLn s
-write s@('-':_) = color Red $ putStrLn s
-write s = putStrLn s
+write = mapM_ write' ∘ lines where
+	write' s@('✓':_) = color Green $ putStrLn s
+	write' s@('+':_) = color Green $ putStrLn s
+	write' s@('✗':_) = color Red $ putStrLn s
+	write' s@('-':_) = color Red $ putStrLn s
+	write' s = putStrLn s
 
 color ∷ Color → IO () → IO ()
 color clr act = setSGR [SetColor Foreground Vivid clr] >> act >> setSGR []

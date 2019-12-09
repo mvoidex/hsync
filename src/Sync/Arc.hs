@@ -16,7 +16,7 @@ import Sync.Ssh
 import Sync.GitLike
 
 arcCvs ∷ GitLike
-arcCvs = GitLike "ya" ["tool", "arc"]
+arcCvs = GitLike "arc" []
 
 enumArc ∷ Location → Bool → IO (Patch Entity (Maybe UTCTime), Repo Entity UTCTime)
 enumArc = enumGitLike arcCvs
