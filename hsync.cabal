@@ -13,12 +13,14 @@ cabal-version: >=1.10
 
 library
   exposed-modules:
+    Sync.Arc
     Sync.Exec
     Sync.Base
     Sync.Base.Types
     Sync.Base.Internal
     Sync.Dir
     Sync.Git
+    Sync.GitLike
     Sync.Mode
     Sync.Svn
     Sync.Repo
@@ -48,7 +50,7 @@ test-suite test
     base >= 4.9 && < 6.0,
     base-unicode-symbols == 0.2.*,
     containers,
-    hspec >= 2.3 && < 2.5
+    hspec >= 2.3 && < 2.8
   hs-source-dirs: tests
   default-language: Haskell2010
   default-extensions: UnicodeSyntax

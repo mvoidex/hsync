@@ -8,7 +8,6 @@ import Control.Applicative
 import Control.Arrow
 import Control.Monad (when)
 import Data.List (intersperse)
-import Data.Monoid
 import Options.Applicative
 import Options.Applicative.Help.Pretty as P
 import System.Console.ANSI
@@ -18,6 +17,7 @@ import Text.Format
 
 import qualified Sync.Base as R (empty)
 import Sync.Base.Internal (mapWithKey)
+import Sync.Arc
 import Sync.Exec
 import Sync.Dir
 import Sync.Git
@@ -26,7 +26,7 @@ import Sync.Svn
 
 import Config
 
-data RepoType = Folder | Git Bool | Svn Bool deriving (Eq, Ord, Read, Show)
+data RepoType = Folder | Git Bool | Svn Bool | Arc Bool deriving (Eq, Ord, Read, Show)
 
 data Options = Options {
 	repoSource ∷ Location,
@@ -64,7 +64,8 @@ options = setBack <$> options' <*> switch (long "back" <> short 'b' <> help "bac
 		<*> many (strOption (long "include" <> short 'i' <> help "include directories and files by regex"))
 		<*> optional (strOption (long "conf" <> help "path to config file, default is ~/.hsync"))
 		<*> switch (long "verbose" <> short 'v' <> help "verbose output")
-	typeFlags = git' <|> svn' <|> pure Folder where
+	typeFlags = arc' <|> git' <|> svn' <|> pure Folder where
+		arc' = flag' Arc (long "arc" <> help "ask arc for modifications") <*> untrackedFlag
 		git' = flag' Git (long "git" <> help "ask git for modifications") <*> untrackedFlag
 		svn' = flag' Svn (long "svn" <> help "ask svn for modifications") <*> untrackedFlag
 		untrackedFlag = switch (long "untracked" <> short 'u' <> help "show untracked files, git/svn mode")
@@ -124,6 +125,8 @@ main = do
 			verbose opts $ format "destination: {0}" ~~ show (repoDestination opts)
 			verbose opts $ format "type: {0}" ~~ (case repoType opts of
 				Folder → "folder"
+				Arc False → "arc"
+				Arc True → "arc=u"
 				Git False → "git"
 				Git True → "git=u"
 				Svn False → "svn"
@@ -172,12 +175,14 @@ main = do
 				-- Returns two repos: versioned files and unversioned
 				enumRepo r = (filters' *** filters') <$> case repoType opts of
 					Folder → ((,) R.empty ∘ repoAsPatch) <$> enumDir r
+					Arc untracked → (mapWithKey unsetDirTime *** repoAsPatch) <$> enumArc r untracked
 					Git untracked → (mapWithKey unsetDirTime *** repoAsPatch) <$> enumGit r untracked
 					Svn untracked → (mapWithKey unsetDirTime *** repoAsPatch) <$> enumSvn r untracked
 				repoAsPatch = fmap Create ∘ mapWithKey dropDirTime
 				canMark = repoType opts ≢ Folder
 				marker = case repoType opts of
 					Folder → error "no need for mark"
+					Arc _ → Marker markArc remoteMarkArc
 					Git _ → Marker markGit remoteMarkGit
 					Svn _ → Marker markSvn remoteMarkSvn
 				filters' = include' ∘ exclude'
